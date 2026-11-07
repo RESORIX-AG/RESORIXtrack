@@ -33,6 +33,7 @@ test("lead corrects an entry with a reason; the employee sees it highlighted", a
   await lead.getByRole("button", { name: label, exact: true }).click()
   const dialog = lead.getByRole("dialog", { name: "Edit entry" })
   await dialog.getByLabel("End").fill(newTo)
+  await lead.keyboard.press("Tab") // closes the time suggestions
   await dialog.getByRole("button", { name: "Save" }).click()
   await expect(dialog.getByText("Enter a reason.")).toBeVisible()
   await dialog.getByLabel(/^Reason/).fill("E2E: meeting ended earlier")

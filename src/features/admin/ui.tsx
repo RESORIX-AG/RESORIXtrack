@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import type { ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SHORT_LIST } from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -21,6 +22,8 @@ import { Spinner } from "@/components/ui/spinner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+
+const ALL = "__all"
 
 /** Side sheet on desktop, bottom sheet on phones. Forms inside scroll; the footer stays put. */
 export function EditorSheet({
@@ -123,32 +126,45 @@ export function useAction<TVars, TResult>(
   })
 }
 
-/** Compact select for table toolbars. `""` means "all". */
+/** Compact select for table toolbars. `""` means "all". `searchable` for dynamic lists (teams, people). */
 export function FilterSelect({
   value,
   onChange,
   options,
   label,
   className,
+  searchable = options.length > SHORT_LIST,
 }: {
   value: string
   onChange: (v: string) => void
-  options: { value: string; label: ReactNode }[]
+  options: { value: string; label: string }[]
   label: string
   className?: string
+  searchable?: boolean
 }) {
+  if (searchable) {
+    return (
+      <Combobox
+        aria-label={label}
+        className={cn("w-auto min-w-36", className)}
+        value={value || ALL}
+        onChange={(v) => onChange(v === ALL || v == null ? "" : v)}
+        options={options.map((o) => ({ value: o.value || ALL, label: o.label }))}
+      />
+    )
+  }
   return (
     <Select
-      items={options.map((o) => ({ value: o.value || "__all", label: o.label }))}
-      value={value || "__all"}
-      onValueChange={(v) => onChange(v === "__all" || v == null ? "" : v)}
+      items={options.map((o) => ({ value: o.value || ALL, label: o.label }))}
+      value={value || ALL}
+      onValueChange={(v) => onChange(v === ALL || v == null ? "" : v)}
     >
       <SelectTrigger aria-label={label} className={cn("min-w-36", className)}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         {options.map((o) => (
-          <SelectItem key={o.value || "__all"} value={o.value || "__all"}>
+          <SelectItem key={o.value || ALL} value={o.value || ALL}>
             {o.label}
           </SelectItem>
         ))}

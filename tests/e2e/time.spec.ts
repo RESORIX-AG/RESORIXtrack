@@ -48,6 +48,7 @@ test("clock out later: stays clocked in until the chosen time; 'clock out now' e
   const hhmm = zurich(new Date(Date.now() + 2 * 3600_000), { hour: "2-digit", minute: "2-digit" })
   await hero.getByRole("button", { name: "Other time" }).click()
   await page.getByLabel("End time").fill(hhmm)
+  await page.keyboard.press("Tab") // closes the time suggestions
   await page.getByRole("button", { name: "Clock out later" }).click()
   await expect(hero).toContainText(`Clocks out automatically at ${hhmm}`)
   await expect(hero).toHaveAccessibleName("You're clocked in")

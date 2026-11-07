@@ -260,7 +260,7 @@ export function SettingsForm({
             )}
           </SettingsGroup>
         ))}
-        <form.Subscribe selector={(st) => st.isDirty}>
+        <form.Subscribe selector={(st) => !st.isDefaultValue}>
           {(dirty) => (
             <SaveBar dirty={dirty} label={t("admin.settings.unsaved")}>
               {dirty ? (

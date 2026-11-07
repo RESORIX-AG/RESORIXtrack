@@ -61,8 +61,7 @@ export function AbsenceSheet({
   const a = live.data ?? initial
   const p = a?.permissions ?? { cancel: false, decide: false, edit: false, attach: false }
   const decide = useMutation({
-    mutationFn: ({ approve, note }: { approve: boolean; note: string }) =>
-      decideAbsenceFn({ data: { id: a!.id, approve, note } }),
+    mutationFn: (data: { id: number; approve: boolean; note: string }) => decideAbsenceFn({ data }),
     onSuccess: async (_, v) => {
       await refresh()
       toast.success(v.approve ? t("absences.approvals.approved_toast") : t("absences.approvals.rejected_toast"))
@@ -122,7 +121,10 @@ export function AbsenceSheet({
                     <X data-icon="inline-start" />
                     {t("absences.approvals.reject")}
                   </Button>
-                  <Button disabled={decide.isPending} onClick={() => decide.mutate({ approve: true, note: "" })}>
+                  <Button
+                    disabled={decide.isPending}
+                    onClick={() => decide.mutate({ id: a.id, approve: true, note: "" })}
+                  >
                     {decide.isPending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
                     {t("absences.approvals.approve")}
                   </Button>
@@ -139,7 +141,7 @@ export function AbsenceSheet({
         onClose={() => setDeclining(false)}
         onReject={(note) => {
           setDeclining(false)
-          decide.mutate({ approve: false, note })
+          if (a) decide.mutate({ id: a.id, approve: false, note })
         }}
       />
     </>

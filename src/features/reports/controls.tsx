@@ -105,6 +105,7 @@ export function RangePicker({
       {preset === "custom" ? (
         <>
           <DatePicker
+            icon
             className="w-44"
             aria-label={t("common.from")}
             value={from}
@@ -112,6 +113,7 @@ export function RangePicker({
             onChange={(v) => v && onChange({ from: v, to: to < v ? v : to })}
           />
           <DatePicker
+            icon
             className="w-44"
             aria-label={t("common.to")}
             value={to}
@@ -194,6 +196,7 @@ export function TeamFilter({
   if (scope.teams.length < 2) return null
   return (
     <FilterSelect
+      searchable
       label={t("common.team")}
       value={value ? String(value) : ""}
       onChange={(v) => onChange(v ? Number(v) : undefined)}

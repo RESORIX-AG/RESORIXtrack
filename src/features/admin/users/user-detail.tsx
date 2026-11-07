@@ -129,6 +129,7 @@ function ProfileForm({ userId }: { userId: number }) {
   const form = useUserForm(defaults, async (v, formApi) => {
     try {
       await save.mutateAsync(v)
+      formApi.reset(v)
     } catch (err) {
       if (!applyServerErrors(formApi, err)) toast.error(tError(err))
     }
@@ -145,7 +146,7 @@ function ProfileForm({ userId }: { userId: number }) {
           <ContractFields form={form} rows />
         </fieldset>
         {locked ? null : (
-          <form.Subscribe selector={(st) => st.isDirty}>
+          <form.Subscribe selector={(st) => !st.isDefaultValue}>
             {(dirty) => (
               <SaveBar dirty={dirty} label={t("admin.settings.unsaved")}>
                 {dirty ? (

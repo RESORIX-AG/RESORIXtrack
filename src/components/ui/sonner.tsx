@@ -25,9 +25,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // expanded so every Undo stays reachable without hovering the stack
+      expand
+      visibleToasts={3}
+      gap={8}
+      duration={4000}
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // sonner's attribute selectors outrank plain utilities
+          actionButton:
+            "h-7! rounded-md! bg-primary! px-2.5! text-xs! text-primary-foreground! hover:bg-primary/80! focus-visible:ring-3! focus-visible:ring-ring/50!",
         },
       }}
       {...props}

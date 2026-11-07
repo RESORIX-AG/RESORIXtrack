@@ -133,7 +133,7 @@ function CalendarForm({
       onSuccess: (r) => onSaved(r.id),
     },
   )
-  const remove = useAction(() => deleteCalendarFn({ data: { id: calendar!.id } }), {
+  const remove = useAction((id: number) => deleteCalendarFn({ data: { id } }), {
     success: t("admin.holidays.calendar_deleted"),
     onSuccess: onDeleted,
   })
@@ -222,7 +222,7 @@ function CalendarForm({
             typeToConfirm={
               calendar.teamCount + calendar.userCount > 0 || calendar.isDefault ? calendar.name : undefined
             }
-            onConfirm={() => remove.mutateAsync(undefined)}
+            onConfirm={() => remove.mutateAsync(calendar.id)}
           />
         ) : null}
       </FormRoot>

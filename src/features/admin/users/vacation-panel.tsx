@@ -79,14 +79,17 @@ function EntitlementSheet({
   const restore = useAction((v: { year: number; days: number; note: string }) =>
     setEntitlementFn({ data: { id: user.id, ...v } }),
   )
-  const remove = useAction(() => setEntitlementFn({ data: { id: user.id, year: entry!.year, days: null, note: "" } }), {
-    onSuccess: () => {
-      onClose()
-      undoToast(t("admin.vacation.removed"), t("common.undo"), () =>
-        restore.mutate({ year: entry!.year, days: entry!.days, note: entry!.note }),
-      )
+  const remove = useAction(
+    (e: Entitlement) => setEntitlementFn({ data: { id: user.id, year: e.year, days: null, note: "" } }),
+    {
+      onSuccess: (_, e) => {
+        onClose()
+        undoToast(t("admin.vacation.removed"), t("common.undo"), () =>
+          restore.mutate({ year: e.year, days: e.days, note: e.note }),
+        )
+      },
     },
-  })
+  )
   const form = useAppForm({
     defaultValues: {
       year: entry?.year ?? currentYear() + 1,
@@ -119,7 +122,7 @@ function EntitlementSheet({
       footer={
         <>
           {entry ? (
-            <Button variant="ghost" className="mr-auto text-destructive" onClick={() => remove.mutate(undefined)}>
+            <Button variant="ghost" className="mr-auto text-destructive" onClick={() => remove.mutate(entry)}>
               {t("admin.vacation.reset")}
             </Button>
           ) : null}

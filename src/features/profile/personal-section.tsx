@@ -39,6 +39,7 @@ export function PersonalSection() {
         return
       }
       toast.success(t("common.saved"))
+      formApi.reset(value)
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["profile"] }),
         qc.invalidateQueries({ queryKey: ["bootstrap"] }),
@@ -85,7 +86,7 @@ export function PersonalSection() {
           <form.AppField name="notifyEmailOnCorrection">
             {(f) => <f.SwitchField row label={t("profile.notify_corrections")} />}
           </form.AppField>
-          <form.Subscribe selector={(st) => st.isDirty}>
+          <form.Subscribe selector={(st) => !st.isDefaultValue}>
             {(dirty) => (
               <SettingsFooter note={dirty ? t("admin.settings.unsaved") : undefined}>
                 <form.SubmitButton variant={dirty ? "default" : "outline"}>{t("common.save")}</form.SubmitButton>

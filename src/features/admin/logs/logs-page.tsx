@@ -390,6 +390,7 @@ function DateRange({
   return (
     <span className="flex items-center gap-1.5">
       <DatePicker
+        icon
         value={from ?? ""}
         max={to ?? undefined}
         onChange={(v) => onChange(v || null, to)}
@@ -399,6 +400,7 @@ function DateRange({
       />
       <span className="text-muted-foreground">–</span>
       <DatePicker
+        icon
         value={to ?? ""}
         min={from ?? undefined}
         onChange={(v) => onChange(from, v || null)}

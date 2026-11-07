@@ -3,9 +3,12 @@ import { expect, goto, PEOPLE, test } from "./fixtures"
 test("command palette: Ctrl/⌘K finds a person and opens their page", async ({ as }) => {
   const page = await as("jonas")
   await goto(page, "/")
-  await page.keyboard.press("ControlOrMeta+k")
   const palette = page.getByRole("dialog", { name: "Search" })
-  await expect(palette).toBeVisible()
+  // the shortcut listener attaches after hydration, which can trail the first paint on a slow machine
+  await expect(async () => {
+    if (!(await palette.isVisible())) await page.keyboard.press("ControlOrMeta+k")
+    await expect(palette).toBeVisible({ timeout: 2_000 })
+  }).toPass()
   await palette.getByRole("combobox").fill("Lea")
   const hit = palette.getByRole("option", { name: new RegExp(PEOPLE.lea.name) })
   await expect(hit).toBeVisible()

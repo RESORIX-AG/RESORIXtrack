@@ -43,9 +43,9 @@ export function HolidaySheet({
       }),
     { success: t("common.saved"), silentError: true, onSuccess: onClose },
   )
-  const remove = useAction(() => deleteHolidayFn({ data: { id: holiday!.id } }), {
-    onSuccess: () => {
-      onDeleted(holiday!)
+  const remove = useAction((h: HolidayItem) => deleteHolidayFn({ data: { id: h.id } }), {
+    onSuccess: (_, h) => {
+      onDeleted(h)
       onClose()
     },
   })
@@ -82,7 +82,7 @@ export function HolidaySheet({
               intent="negative"
               variant="ghost"
               className="mr-auto text-destructive"
-              onClick={() => remove.mutate(undefined)}
+              onClick={() => remove.mutate(holiday)}
               disabled={remove.isPending}
             >
               {t("common.delete")}

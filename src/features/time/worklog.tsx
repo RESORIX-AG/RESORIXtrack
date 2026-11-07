@@ -6,7 +6,7 @@
 import { useStore } from "@tanstack/react-form"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileText, Pencil, Plus, Trash2 } from "lucide-react"
-import { type ReactNode, useId, useState } from "react"
+import { useId, useState } from "react"
 import { toast } from "sonner"
 import { Section } from "@/components/app/page"
 import { Segmented } from "@/components/app/segmented"
@@ -14,9 +14,9 @@ import { ColorDot } from "@/components/app/status-badge"
 import { undoToast } from "@/components/app/undo-toast"
 import { FormRoot, useAppForm } from "@/components/form/form"
 import { Button } from "@/components/ui/button"
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Progress } from "@/components/ui/progress"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { failure } from "@/lib/attempt"
 import { fmtDayLong, fmtMinutes, fmtWeekdayShort } from "@/lib/format"
@@ -312,18 +312,13 @@ function WorklogForm({
   const refs = useQuery({ ...customerRefsQuery(), enabled: self })
   const list = projects.data?.items ?? []
   const options = item?.project && !list.some((p) => p.id === item.project?.id) ? [item.project, ...list] : list
-  const projectItems = [
-    { value: "none", label: t("worklog.no_project") as ReactNode },
+  const projectItems: ComboboxOption[] = [
+    { value: "none", label: t("worklog.no_project") },
     ...options.map((p) => ({
       value: String(p.id),
-      label: (
-        <>
-          <ColorDot color={p.color} />
-          {p.name}
-          {p.code ? <span className="text-muted-foreground">{p.code}</span> : null}
-          {!p.isActive ? <span className="text-muted-foreground">· {t("worklog.inactive")}</span> : null}
-        </>
-      ),
+      label: p.name,
+      icon: <ColorDot color={p.color} />,
+      hint: [p.code, !p.isActive && t("worklog.inactive")].filter(Boolean).join(" · ") || undefined,
     })),
   ]
 
@@ -422,25 +417,16 @@ function WorklogForm({
                     <FieldLabel htmlFor={wlProjectId} className="sr-only">
                       {t("worklog.project")}
                     </FieldLabel>
-                    <Select
-                      items={projectItems}
+                    <Combobox
+                      id={wlProjectId}
+                      invalid={Boolean(err)}
+                      options={projectItems}
                       value={f.state.value || "none"}
-                      onValueChange={(x) => {
+                      onChange={(x) => {
                         f.handleChange(x === "none" || x == null ? "" : x)
                         f.handleBlur()
                       }}
-                    >
-                      <SelectTrigger id={wlProjectId} className="w-full" aria-invalid={err ? true : undefined}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projectItems.map((p) => (
-                          <SelectItem key={p.value} value={p.value}>
-                            {p.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                     {err ? <FieldError>{err}</FieldError> : null}
                   </Field>
                 )
@@ -497,7 +483,13 @@ function WorklogForm({
             <div className="grid grid-cols-2 gap-2 [&_label]:sr-only">
               <form.AppField name="start">{() => <TimeField label={t("worklog.from")} />}</form.AppField>
               <form.AppField name="end">
-                {() => <TimeField label={t("worklog.to")} description={timed > 0 ? fmtMinutes(timed) : undefined} />}
+                {() => (
+                  <TimeField
+                    label={t("worklog.to")}
+                    from={v.start}
+                    description={timed > 0 ? fmtMinutes(timed) : undefined}
+                  />
+                )}
               </form.AppField>
             </div>
           )}

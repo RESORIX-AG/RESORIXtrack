@@ -128,6 +128,7 @@ export function ProjectsPage({
           <>
             {teamsInUse.length ? (
               <FilterSelect
+                searchable
                 label={t("common.team")}
                 value={team}
                 onChange={setTeam}

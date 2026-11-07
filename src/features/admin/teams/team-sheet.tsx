@@ -42,13 +42,19 @@ export function TeamSheet({
   const { data: teams } = useSuspenseQuery(teamsQuery)
   const { data: refs } = useSuspenseQuery(userRefsQuery)
   const team = teamId != null ? teams.find((x) => x.id === teamId) : undefined
+  const companyCalendar = refs.calendars.find((c) => c.isDefault)
+  // the company calendar is stored as null so the team follows a later change of the default
+  const teamCalendarId = (value: string) => {
+    const id = Number(value) || null
+    return id === companyCalendar?.id ? null : id
+  }
   const [confirmDelete, setConfirmDelete] = useState(false)
   const save = useAction(
     (v: { name: string; color: string; holidayCalendarId: string; memberIds: number[] }) =>
       saveTeamFn({
         data: {
           id: teamId,
-          input: { name: v.name.trim(), color: v.color, holidayCalendarId: Number(v.holidayCalendarId) || null },
+          input: { name: v.name.trim(), color: v.color, holidayCalendarId: teamCalendarId(v.holidayCalendarId) },
           memberIds: v.memberIds,
         },
       }),
@@ -66,7 +72,7 @@ export function TeamSheet({
     defaultValues: {
       name: team?.name ?? "",
       color: team?.color ?? BRAND_DEFAULT,
-      holidayCalendarId: String(team?.holidayCalendarId ?? 0),
+      holidayCalendarId: String(team?.holidayCalendarId ?? companyCalendar?.id ?? ""),
       memberIds: team?.members.map((m) => m.id) ?? [],
     },
     validators: {
@@ -133,12 +139,17 @@ export function TeamSheet({
               <div className="sm:col-span-2">
                 <form.AppField name="holidayCalendarId">
                   {(f) => (
-                    <f.SelectField
+                    <f.ComboboxField
                       label={t("admin.teams.calendar")}
-                      options={[
-                        { value: "0", label: t("admin.teams.calendar_default") },
-                        ...refs.calendars.map((c) => ({ value: String(c.id), label: c.name })),
-                      ]}
+                      options={refs.calendars.map((c) => ({
+                        value: String(c.id),
+                        label: c.name,
+                        badge: c.isDefault ? (
+                          <StatusBadge tone="brand" className="shrink-0">
+                            {t("admin.holidays.default")}
+                          </StatusBadge>
+                        ) : undefined,
+                      }))}
                     />
                   )}
                 </form.AppField>

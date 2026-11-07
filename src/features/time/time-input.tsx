@@ -1,26 +1,53 @@
 /**
  * Time-of-day input that follows the profile's 24/12 h format in every browser. `value`/`onChange` use
- * "HH:MM" (24 h); typing is lenient ("930", "9.30", "9:30 pm") and committed on blur or Enter.
+ * "HH:MM" (24 h); typing is lenient ("930", "9.30", "9:30 pm") and committed on blur or Enter. Clicking or
+ * typing opens a list of quarter hours scrolled to the current time; with `from` (an end time) the list
+ * starts after it and shows each duration.
  */
+import { Autocomplete } from "@base-ui/react/autocomplete"
 import { useStore } from "@tanstack/react-form"
 import { type ComponentProps, type ReactNode, useId, useState } from "react"
 import { useFieldContext } from "@/components/form/form"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { fmtMinutes } from "@/lib/format"
 import { errorMessage } from "@/lib/guards"
 import { useI18n } from "@/lib/i18n"
 import { useMe } from "@/lib/session"
-import { fmtClockTime, parseTimeText } from "./lib"
+import { fmtClockTime, hhmmToMin, minToHhmm, parseTimeText } from "./lib"
+
+const STEP = 15
+const COMPLETE_TIME = /^\d{1,2}[:.]\d{2}(\s*[ap]\.?m?\.?)?$/i
+
+function suggestions(from: string | null): string[] {
+  const first = from ? Math.floor(hhmmToMin(from) / STEP) * STEP + STEP : 0
+  return Array.from({ length: 1440 / STEP }, (_, i) => minToHhmm(first + i * STEP)).filter((t) => t !== from)
+}
+
+/** The suggestion to scroll to: the current time rounded down to the step. */
+function anchorOf(current: string | null): string | null {
+  return current ? minToHhmm(Math.floor(hhmmToMin(current) / STEP) * STEP) : null
+}
+
+/** Scrolls the list so this item sits in the middle (runs once each time the anchor item changes). */
+function centre(el: HTMLElement | null) {
+  const list = el?.parentElement
+  if (el && list) list.scrollTop = el.offsetTop - list.clientHeight / 2 + el.offsetHeight / 2
+}
 
 export function TimeInput({
   value,
   onChange,
   onBlur,
+  from,
   ...rest
-}: { value: string; onChange: (hhmm: string) => void; onBlur?: () => void } & Omit<
-  ComponentProps<typeof Input>,
-  "value" | "onChange" | "onBlur" | "type"
->) {
+}: {
+  value: string
+  onChange: (hhmm: string) => void
+  onBlur?: () => void
+  /** start time an end is measured from */
+  from?: string
+} & Omit<ComponentProps<typeof Input>, "value" | "onChange" | "onBlur" | "type">) {
   const hour12 = useMe().timeFormat === "12h"
   const shown = value ? fmtClockTime(value, hour12) : ""
   const [text, setText] = useState(shown)
@@ -30,40 +57,74 @@ export function TimeInput({
     setSynced(value)
     if (parseTimeText(text) !== (value || null)) setText(shown)
   }
-  const commit = () => {
-    const parsed = parseTimeText(text)
-    if (!text.trim()) {
+  const commit = (raw: string) => {
+    const parsed = parseTimeText(raw)
+    if (!raw.trim()) {
       if (value) onChange("")
     } else if (parsed) {
       setText(fmtClockTime(parsed, hour12))
       if (parsed !== value) onChange(parsed)
     }
-    onBlur?.()
   }
+  const start = from ? parseTimeText(from) : null
+  const items = suggestions(start)
+  const current = parseTimeText(text) ?? (value || null)
+  const anchor = anchorOf(current)
+
   return (
-    <Input
-      type="text"
-      inputMode={hour12 ? "text" : "numeric"}
-      autoComplete="off"
-      placeholder={hour12 ? "h:mm AM" : "HH:MM"}
-      className="tabular"
-      {...rest}
+    <Autocomplete.Root
+      items={items}
+      mode="none"
+      openOnInputClick
       value={text}
-      onChange={(e) => {
-        const v = e.target.value
-        setText(v)
-        // a complete time is committed while typing; partial input waits for blur or Enter
-        if (/^\d{1,2}[:.]\d{2}(\s*[ap]\.?m?\.?)?$/i.test(v.trim())) {
-          const parsed = parseTimeText(v)
-          if (parsed && parsed !== value) onChange(parsed)
-        }
+      itemToStringValue={(t: string) => fmtClockTime(t, hour12)}
+      onValueChange={(next, details) => {
+        setText(next)
+        // a picked suggestion or a complete typed time applies at once; partial input waits for blur or Enter
+        if (details.reason === "item-press" || COMPLETE_TIME.test(next.trim())) commit(next)
       }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit()
-        rest.onKeyDown?.(e)
-      }}
-    />
+    >
+      <Autocomplete.Input
+        render={<Input />}
+        inputMode={hour12 ? "text" : "numeric"}
+        autoComplete="off"
+        placeholder={hour12 ? "h:mm AM" : "HH:MM"}
+        className="tabular"
+        {...rest}
+        onBlur={() => {
+          commit(text)
+          onBlur?.()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit(text)
+          rest.onKeyDown?.(e)
+        }}
+      />
+      <Autocomplete.Portal>
+        <Autocomplete.Positioner className="isolate z-50" sideOffset={4} align="start">
+          <Autocomplete.Popup className="w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <Autocomplete.List className="relative max-h-64 overflow-y-auto overscroll-contain p-1 outline-none">
+              {(t: string) => (
+                <Autocomplete.Item
+                  key={t}
+                  value={t}
+                  ref={t === anchor ? centre : undefined}
+                  data-current={t === current ? "" : undefined}
+                  className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm tabular outline-hidden select-none data-current:font-semibold data-current:text-primary data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                >
+                  {fmtClockTime(t, hour12)}
+                  {start ? (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {fmtMinutes((hhmmToMin(t) - hhmmToMin(start) + 1440) % 1440)}
+                    </span>
+                  ) : null}
+                </Autocomplete.Item>
+              )}
+            </Autocomplete.List>
+          </Autocomplete.Popup>
+        </Autocomplete.Positioner>
+      </Autocomplete.Portal>
+    </Autocomplete.Root>
   )
 }
 
@@ -71,10 +132,12 @@ export function TimeInput({
 export function TimeField({
   label,
   description,
+  from,
   className,
 }: {
   label: ReactNode
   description?: ReactNode
+  from?: string
   className?: string
 }) {
   const field = useFieldContext<string>()
@@ -92,6 +155,7 @@ export function TimeField({
         name={field.name}
         data-field={field.name}
         value={field.state.value ?? ""}
+        from={from}
         onChange={(v) => field.handleChange(v)}
         onBlur={field.handleBlur}
         aria-invalid={error ? true : undefined}

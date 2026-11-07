@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils"
 
 const Select = SelectPrimitive.Root
 
+/** Longest list a plain `Select` shows; longer or dynamic lists get a search (`Combobox`). */
+export const SHORT_LIST = 6
+
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return <SelectPrimitive.Group data-slot="select-group" className={cn("scroll-my-1 p-1", className)} {...props} />
 }
@@ -52,9 +55,9 @@ function SelectContent({
   children,
   side = "bottom",
   sideOffset = 4,
-  align = "center",
+  align = "start",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {

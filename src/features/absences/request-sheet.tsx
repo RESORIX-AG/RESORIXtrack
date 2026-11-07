@@ -13,6 +13,7 @@ import { AbsenceCalendar } from "@/components/app/absence-calendar"
 import { type CalendarCell, cellsFrom } from "@/components/app/absence-calendar-cells"
 import { ResponsiveDialog } from "@/components/app/responsive-dialog"
 import { Segmented } from "@/components/app/segmented"
+import { ColorDot } from "@/components/app/status-badge"
 import { FormRoot, useAppForm } from "@/components/form/form"
 import { applyServerErrors } from "@/components/form/server-errors"
 import { Button } from "@/components/ui/button"
@@ -269,9 +270,13 @@ function RequestForm({ mode, ctx, onDone }: { mode: RequestMode; ctx: RequestCon
         {mode.kind === "new" && choices.length > 1 ? (
           <form.AppField name="type">
             {(f) => (
-              <f.SelectField
+              <f.ComboboxField
                 label={t("absences.type")}
-                options={choices.map((x) => ({ value: x.key, label: absenceLabel(x) }))}
+                options={choices.map((x) => ({
+                  value: x.key,
+                  label: absenceLabel(x),
+                  icon: <ColorDot color={x.color} />,
+                }))}
               />
             )}
           </form.AppField>

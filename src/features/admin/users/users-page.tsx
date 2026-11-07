@@ -181,6 +181,7 @@ export function UsersPage({ search, onSearch }: { search: UsersSearch; onSearch:
         toolbar={
           <>
             <FilterSelect
+              searchable
               label={t("common.team")}
               value={search.team ?? ""}
               onChange={(v) => onSearch({ ...search, team: v || undefined })}

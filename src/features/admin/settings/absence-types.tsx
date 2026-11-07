@@ -108,7 +108,7 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
     },
     { success: t("common.saved"), silentError: true, onSuccess: onClose },
   )
-  const remove = useAction(() => deleteAbsenceTypeFn({ data: { id: row!.id } }), {
+  const remove = useAction((id: number) => deleteAbsenceTypeFn({ data: { id } }), {
     success: t("admin.types.deleted"),
     onSuccess: onClose,
   })
@@ -237,7 +237,7 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
           onOpenChange={setConfirm}
           title={t("admin.types.delete_title", { name: absenceLabel(row) })}
           confirmLabel={t("common.delete")}
-          onConfirm={() => remove.mutateAsync(undefined)}
+          onConfirm={() => remove.mutateAsync(row.id)}
         />
       ) : null}
     </EditorSheet>

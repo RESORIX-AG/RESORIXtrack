@@ -170,7 +170,7 @@ function Setup() {
               </form.AppField>
               <form.AppField name="timezone">
                 {(f) => (
-                  <f.SelectField
+                  <f.ComboboxField
                     label={t("profile.timezone")}
                     options={info.timezones.map((tz) => ({ value: tz, label: tz.replace(/_/g, " ") }))}
                   />
@@ -204,7 +204,7 @@ function Setup() {
             <div className={step === 2 ? "contents" : "hidden"}>
               <form.AppField name="holidayPreset">
                 {(f) => (
-                  <f.SelectField
+                  <f.ComboboxField
                     label={t("setup.holidays")}
                     description={t("setup.holidays_help")}
                     options={[
