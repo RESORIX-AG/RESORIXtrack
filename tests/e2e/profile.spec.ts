@@ -77,7 +77,8 @@ function scheme(page: Page) {
 }
 
 test("api keys: a created key is listed without a reload", async ({ as }, info) => {
-  const page = await as(pick(info, "elena", "luca"))
+  // English-UI people the language test above never touches (it switches luca to German meanwhile)
+  const page = await as(pick(info, "elena", "mia"))
   await goto(page, "/profile")
   await page.getByRole("button", { name: "New key" }).click()
   const dialog = page.getByRole("dialog", { name: "New key" })
