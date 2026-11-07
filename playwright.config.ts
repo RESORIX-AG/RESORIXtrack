@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test"
 
 const port = Number(process.env.E2E_PORT ?? 3230)
-const baseURL = `http://localhost:${port}`
+// 127.0.0.1, not localhost: CI runners resolve localhost to ::1 first, where nothing listens
+const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: "tests/e2e",

@@ -54,7 +54,7 @@ async function main() {
       NODE_ENV: "production",
       PORT: port,
       HOST: "127.0.0.1",
-      BASE_URL: `http://localhost:${port}`,
+      BASE_URL: `http://127.0.0.1:${port}`, // same host the browser uses (origin check)
       SESSION_COOKIE_SECURE: "false",
       PWNED_PASSWORDS_CHECK: "false",
       TRUSTED_PROXIES: "0",

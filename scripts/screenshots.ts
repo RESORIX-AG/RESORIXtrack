@@ -15,7 +15,7 @@ const root = path.resolve(import.meta.dirname, "..")
 const out = path.join(root, "docs/screenshots")
 const dataDir = path.join(root, "var/screenshots")
 const port = process.env.SHOT_PORT ?? "3240"
-const base = `http://localhost:${port}`
+const base = `http://127.0.0.1:${port}`
 
 type Theme = "dark" | "light"
 type Shot = {
