@@ -1,6 +1,6 @@
 /**
  * Credentials for people (Better Auth `account` rows with providerId "credential"). Used by the setup
- * wizard, invitations, administrators setting a password, the CLI and import-v1.
+ * wizard, invitations, administrators setting a password and the CLI.
  */
 import { createHash } from "node:crypto"
 import { and, eq } from "drizzle-orm"

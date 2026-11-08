@@ -8,14 +8,17 @@
  *
  * - `errors`: converts anything thrown into an AppError (code/status/message/fields reach the client;
  *   unexpected errors are logged and become a generic `server_error`).
- * - `authed`: requires a Better Auth session, loads the Actor (roles, capabilities, led teams).
+ * - `authed`: requires a Better Auth session, loads the Actor (roles, capabilities, led teams). While the
+ *   company requires two-factor authentication and the person has not set it up, only `authedEnrolment`
+ *   functions (the profile) answer.
  * - `optionalAuth`: like `authed` but `actor` may be null (public pages).
  */
 import { createMiddleware, createServerOnlyFn } from "@tanstack/react-start"
 import { getRequestHeaders } from "@tanstack/react-start/server"
 import { auth } from "./auth"
 import { rawSqlite } from "./db"
-import { AppError, toAppError, Unauthorized } from "./errors"
+import { AppError, Forbidden, toAppError, Unauthorized } from "./errors"
+import { mfaEnrolmentDue } from "./services/mfa-policy"
 import { type Actor, loadActor } from "./services/permissions"
 
 export const errors = createMiddleware({ type: "function" }).server(async ({ next }) => {
@@ -35,11 +38,22 @@ const sessionActor = createServerOnlyFn(async (): Promise<Actor | null> => {
   return actor.user.isActive ? actor : null
 })
 
+/** Signed in, but two-factor setup may still be due: the profile (password, two-factor, passkeys, devices). */
+export const authedEnrolment = createMiddleware({ type: "function" })
+  .middleware([errors])
+  .server(async ({ next }) => {
+    const actor = await sessionActor()
+    if (!actor) throw new Unauthorized("Please sign in")
+    return next({ context: { actor } })
+  })
+
 export const authed = createMiddleware({ type: "function" })
   .middleware([errors])
   .server(async ({ next }) => {
     const actor = await sessionActor()
     if (!actor) throw new Unauthorized("Please sign in")
+    if (mfaEnrolmentDue(actor.user))
+      throw new Forbidden("Set up two-factor authentication first", { code: "mfa_enrolment_required" })
     return next({ context: { actor } })
   })
 

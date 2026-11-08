@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { db, rawSqlite } from "@/server/db"
 import * as s from "@/server/db/schema"
@@ -56,7 +57,7 @@ describe("sign-off", () => {
     expect(so).toMatchObject({
       month: "2026-10",
       active: true,
-      sealVersion: 2,
+      sealVersion: 4,
       note: "checked",
       signedBy: { name: "Lea Lead" },
     })
@@ -99,17 +100,17 @@ describe("sign-off", () => {
     expect(sign(org.hr!.id, [org.lead.id, org.carl.id]).every((r) => r.ok)).toBe(true)
   })
 
-  it("is blocked by an unfinished month, open requests, running entries and gaps in a required work log", () => {
+  it("is blocked by an unfinished month, open requests, running entries and work without a required project", () => {
     expect(sign(org.lead.id, [org.anna.id], "2026-11")[0].error?.code).toBe("month_not_complete")
     createAbsence(loadActor(org.anna.id), { type: "vacation", startDate: "2026-10-20" })
     expect(sign(org.lead.id, [org.anna.id])[0].error?.code).toBe("pending_absence")
     makeEntry(org.ben.id, "2026-10-30T07:00:00.000000Z", null)
     expect(blockers(getUserOr404(org.ben.id), "2026-10")).toEqual(["running_entry"])
-    withSettings({ worklog_mode: "required" })
+    withSettings({ project_mode: "required" })
     expect(blockers(getUserOr404(org.lead.id), "2026-10")).toEqual([])
     makeEntry(org.lead.id, "2026-10-15T06:00:00.000000Z", "2026-10-15T10:00:00.000000Z")
-    expect(blockers(getUserOr404(org.lead.id), "2026-10")).toEqual(["worklog_incomplete"])
-    withSettings({ worklog_mode: "optional" })
+    expect(blockers(getUserOr404(org.lead.id), "2026-10")).toEqual(["projects_missing"])
+    withSettings({ project_mode: "optional" })
     expect(sign(org.hr!.id, [org.lead.id])[0].ok).toBe(true)
     expect(sign(org.hr!.id, [org.lead.id])[0].error?.code).toBe("already_signed")
   })
@@ -124,6 +125,14 @@ describe("sign-off", () => {
     expect(signoffOverview(loadActor(org.lead.id)).month).toBe("2026-10")
     expect(err(() => signoffOverview(loadActor(org.anna.id))).code).toBe("forbidden")
     expect(signoffOverview(loadActor(org.hr!.id), { month: "2026-10" }).rows).toHaveLength(6)
+  })
+
+  it("keeps people who left without an end date in the months they recorded time", () => {
+    db.update(s.users).set({ isActive: false }).where(eq(s.users.id, org.anna.id)).run()
+    const ids = (month: string) => signoffOverview(loadActor(org.hr!.id), { month }).rows.map((r) => r.user.id)
+    expect(ids("2026-10")).toContain(org.anna.id)
+    db.update(s.users).set({ isActive: false }).where(eq(s.users.id, org.ben.id)).run()
+    expect(ids("2026-10")).not.toContain(org.ben.id)
   })
 
   it("makes the month read-only in services and in the database", () => {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createDb, db, openSqlite, rawSqlite, runMigrations, setDatabase } from "@/server/db"
 import * as s from "@/server/db/schema"
 import { verifyPassword } from "@/server/password"
-import { verifyUserChain } from "@/server/services/seals"
+import { SEAL_VERSION, verifyUserChain } from "@/server/services/seals"
 import { freeze } from "@/server/time"
 import { formatAccounts, resetDevDatabase, seedDemo } from "."
 import { emailOf } from "./data"
@@ -19,7 +19,6 @@ const TABLES = [
   "work_schedules",
   "projects",
   "time_entries",
-  "work_logs",
   "absences",
   "balance_adjustments",
   "month_signoffs",
@@ -62,8 +61,11 @@ describe("seed-demo", () => {
       balance_adjustments: 4,
       month_signoffs: 4,
     })
-    expect(c.time_entries).toBeGreaterThan(1200) // two work entries per day: the gap is the break
-    expect(c.work_logs).toBeGreaterThan(500)
+    expect(c.time_entries).toBeGreaterThan(1200) // a morning and an afternoon: the gap is the break
+    const withProject = rawSqlite()
+      .prepare<[], { n: number }>("SELECT count(*) AS n FROM time_entries WHERE project_id IS NOT NULL")
+      .get()!.n
+    expect(withProject / c.time_entries!).toBeGreaterThan(0.9)
     expect(c.holidays).toBeGreaterThan(0)
 
     const admin = user("admin")
@@ -99,7 +101,7 @@ describe("seed-demo", () => {
 
     const signed = db.select().from(s.monthSignoffs).all()
     expect(new Set(signed.map((r) => r.month))).toEqual(new Set(["2026-10"]))
-    expect(signed.every((r) => r.sealVersion === 2)).toBe(true)
+    expect(signed.every((r) => r.sealVersion === SEAL_VERSION)).toBe(true)
     for (const r of signed) expect(verifyUserChain(r.userId)).toEqual({})
     const anna = user("anna.meier")
     expect(() =>

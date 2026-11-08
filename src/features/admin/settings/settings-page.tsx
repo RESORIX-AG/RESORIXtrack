@@ -14,13 +14,12 @@ import { type Group, SettingsForm } from "./settings-form"
 
 const TAB_GROUPS: Partial<Record<SettingsTab, Group[]>> = {
   company: [
-    { title: "company", fields: [{ key: "company_name", kind: "text" }] },
     {
-      title: "defaults",
+      title: "company",
       fields: [
+        { key: "company_name", kind: "text" },
         { key: "default_timezone", kind: "timezone" },
         { key: "default_locale", kind: "locale" },
-        { key: "default_vacation_days", kind: "number", min: 0, max: 366, step: 0.5, unit: "days" },
       ],
     },
   ],
@@ -30,8 +29,11 @@ const TAB_GROUPS: Partial<Record<SettingsTab, Group[]>> = {
       fields: [
         { key: "fulltime_weekly_minutes", kind: "hours" },
         { key: "holiday_mode", kind: "toggle", options: ["scheduled", "prorata"] },
-        { key: "vacation_prorate_workdays", kind: "switch" },
       ],
+    },
+    {
+      title: "vacation",
+      fields: [{ key: "default_vacation_days", kind: "number", min: 0, max: 366, step: 0.5, unit: "days" }],
     },
     {
       title: "corrections",
@@ -50,19 +52,8 @@ const TAB_GROUPS: Partial<Record<SettingsTab, Group[]>> = {
       ],
     },
     {
-      title: "worklog",
-      fields: [
-        { key: "worklog_mode", kind: "toggle", options: ["off", "optional", "required"] },
-        {
-          key: "worklog_required_percent",
-          kind: "number",
-          min: 1,
-          max: 100,
-          unit: "percent",
-          when: ["worklog_mode", "required"],
-        },
-        { key: "worklog_project_required", kind: "switch", when: ["worklog_mode", "required"] },
-      ],
+      title: "projects",
+      fields: [{ key: "project_mode", kind: "toggle", options: ["off", "optional", "required"] }],
     },
   ],
   law: [

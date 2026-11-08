@@ -1,7 +1,7 @@
 import interLatin from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
 import { type QueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
-import type { ReactNode } from "react"
+import { type ReactNode, Suspense, useEffect } from "react"
 import { preload } from "react-dom"
 import { BrandStyle } from "@/components/app/brand-style"
 import type { Theme } from "@/components/app/theme"
@@ -59,6 +59,11 @@ function RootDocument({ children }: { children: ReactNode }) {
         <I18nProvider locale={data.locale}>
           <TooltipProvider delay={400}>
             {children}
+            {/* React hydrates Suspense boundaries after the shell: in its own one, the mark's effect runs in the
+                same pass as the router outlet's boundary (the app layout), after the layout's effects */}
+            <Suspense fallback={null}>
+              <HydratedMark />
+            </Suspense>
             <Toaster position="bottom-right" />
           </TooltipProvider>
         </I18nProvider>
@@ -66,6 +71,17 @@ function RootDocument({ children }: { children: ReactNode }) {
       </body>
     </html>
   )
+}
+
+/**
+ * Sets `data-hydrated` on <html> once the page's effects (window shortcuts and other listeners) are attached.
+ * End-to-end tests wait for it. Client-only, so the server markup stays identical.
+ */
+function HydratedMark() {
+  useEffect(() => {
+    document.documentElement.dataset.hydrated = ""
+  }, [])
+  return null
 }
 
 /** Browser chrome colour: --background of each theme (hex, browsers do not take OKLCH here). */

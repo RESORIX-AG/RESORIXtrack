@@ -106,15 +106,21 @@ export default function CommandPaletteDialog({ open, setOpen }: { open: boolean;
             </CommandGroup>
           ) : null}
           <CommandGroup heading={t("search.actions")}>
-            <CommandItem value="action add time entry" onSelect={() => go("/time", { add: "1" })}>
+            <CommandItem
+              value={`action add time entry ${t("search.add_time")}`}
+              onSelect={() => go("/time", { add: "1" })}
+            >
               <Plus />
               {t("search.add_time")}
             </CommandItem>
-            <CommandItem value="action request absence vacation" onSelect={() => go("/absences", { request: "1" })}>
+            <CommandItem
+              value={`action request absence vacation ${t("search.request_absence")} ${t("absence_types.vacation")}`}
+              onSelect={() => go("/absences", { request: "1" })}
+            >
               <CalendarPlus />
               {t("search.request_absence")}
             </CommandItem>
-            <CommandItem value="action clock" onSelect={() => go("/")}>
+            <CommandItem value={`action clock ${t("search.clock")}`} onSelect={() => go("/")}>
               <Clock />
               {t("search.clock")}
               <CommandShortcut>S</CommandShortcut>

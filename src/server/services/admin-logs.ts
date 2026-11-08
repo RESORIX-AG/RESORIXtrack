@@ -19,6 +19,7 @@ export const ADMIN_AUDIT_ENTITIES = [
   "entitlement",
   "project",
   "api_token",
+  "holiday",
   "signoff",
 ]
 export const ALL_AUDIT_ENTITIES = [

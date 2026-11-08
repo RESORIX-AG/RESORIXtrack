@@ -7,9 +7,10 @@ import { APIError } from "better-auth/api"
 import { and, eq } from "drizzle-orm"
 import { API_SCOPES, auth } from "@/server/auth"
 import { db } from "@/server/db"
-import { account } from "@/server/db/schema"
+import { account, users } from "@/server/db/schema"
 import { AppError, TooManyRequests, Validation } from "@/server/errors"
 import { verifyPassword } from "@/server/password"
+import { loginThrottled, recordLoginAttempt } from "@/server/services/login-log"
 
 export const headers = () => getRequestHeaders()
 
@@ -44,13 +45,23 @@ export function fromAuthError(err: unknown, passwordField = "newPassword"): neve
   throw new AppError(err.message || "Request failed", { code: code.toLowerCase() || "bad_request" })
 }
 
-export function passwordMatches(userId: number, password: string): Promise<boolean> {
+/**
+ * Re-authentication inside a session (API keys, administrator step-up). Wrong passwords count towards the
+ * sign-in throttle, so a stolen session cannot be used to guess the password.
+ */
+export async function passwordMatches(userId: number, password: string): Promise<boolean> {
+  const user = db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get()
   const row = db
     .select({ p: account.password })
     .from(account)
     .where(and(eq(account.userId, userId), eq(account.providerId, "credential")))
     .get()
-  return row?.p ? verifyPassword({ hash: row.p, password }) : Promise.resolve(false)
+  if (!user || !row?.p) return false
+  const h = headers()
+  if (loginThrottled(user.email, h)) throw new TooManyRequests("Too many failed attempts. Wait a few minutes.")
+  const ok = await verifyPassword({ hash: row.p, password })
+  if (!ok) recordLoginAttempt({ email: user.email, userId, success: false, reason: "invalid_password", headers: h })
+  return ok
 }
 
 export const SCOPE_LIST = Object.entries(API_SCOPES).flatMap(([res, actions]) => actions.map((a) => `${res}:${a}`))

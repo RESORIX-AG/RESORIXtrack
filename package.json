@@ -93,6 +93,9 @@
       "better-sqlite3",
       "esbuild",
       "@node-rs/argon2"
-    ]
+    ],
+    "overrides": {
+      "exceljs>uuid": "11.1.1"
+    }
   }
 }

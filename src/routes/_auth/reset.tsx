@@ -11,7 +11,10 @@ import { newPasswordValidator, passwordsDiffer, useFragmentToken } from "@/featu
 import { authClient } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
 
-export const Route = createFileRoute("/_auth/reset")({ component: Reset })
+export const Route = createFileRoute("/_auth/reset")({
+  staticData: { titleKey: "auth.reset_title" },
+  component: Reset,
+})
 
 export function InvalidLink() {
   const t = useT()

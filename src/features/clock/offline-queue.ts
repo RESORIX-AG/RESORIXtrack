@@ -13,6 +13,8 @@ export interface QueuedAction {
   action: OfflineClockAction
   /** ISO instant of the click on the device */
   at: string
+  /** Project of a clock-in or switch */
+  projectId?: number | null
 }
 
 const DB_NAME = "rt-offline"

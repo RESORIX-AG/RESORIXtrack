@@ -41,11 +41,11 @@ export function findingAmount(f: Pick<Finding, "rule">, v: number): string {
   return DAY_RULES.has(f.rule) ? String(Math.round(v * 10) / 10) : hm(v)
 }
 
-function worklogText(items: TimesheetData["worklog"][string] | undefined): string {
+function projectTimeText(items: TimesheetData["projectTime"][string] | undefined): string {
   return (items ?? [])
     .map((w) => {
       const when = w.start ? `${w.start}-${w.end ?? ""} ` : ""
-      const ref = w.project ?? w.customerRef
+      const ref = w.project
       const what = ref && w.note ? `${ref}: ${w.note}` : ref || w.note
       return `${when}${what} (${hm(w.minutes)})`.trim()
     })
@@ -98,7 +98,7 @@ export function timesheetSheet(d: TimesheetData, x: ExportI18n): Sheet {
     col(L("delta"), "duration"),
     ...pay,
     col(L("edited"), "bool"),
-    col(L("worklog")),
+    col(L("project_time")),
   ]
   const rows: CellValue[][] = d.days.map((day) => [
     day.date,
@@ -131,7 +131,7 @@ export function timesheetSheet(d: TimesheetData, x: ExportI18n): Sheet {
       withCredit,
     ),
     day.edited,
-    worklogText(d.worklog[day.date]),
+    projectTimeText(d.projectTime[day.date]),
   ])
   const total = rows.length
   const tail = pad(2)
@@ -237,7 +237,6 @@ export function absencesSheets(d: AbsencesReportData, x: ExportI18n): Sheet[] {
 }
 
 export function projectName(p: ProjectHoursData["projects"][number], x: ExportI18n): string {
-  if (p.kind === "customer") return `${x.L("customer")} ${p.name ?? ""}`.trim()
   return p.name ?? x.L("no_project")
 }
 

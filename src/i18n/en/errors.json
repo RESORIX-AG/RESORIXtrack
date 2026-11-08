@@ -47,7 +47,11 @@
     "derived": "Follows from the start and end time",
     "too_many": "Too many files",
     "not_employed": "Outside the employment",
-    "inactive": "No longer active"
+    "inactive": "No longer active",
+    "before_current": "Before the current terms began",
+    "overlaps_earlier": "Overlaps the earlier employment",
+    "before_end": "Must be after the employment end",
+    "after_start": "After the employment start"
   },
   "period_signed_off": "This month has been signed off and can no longer be changed.",
   "signoff_immutable": "Sign-off records cannot be changed.",
@@ -78,13 +82,10 @@
   "mfa_enabled": "Two-factor authentication is already enabled.",
   "mfa_disabled": "Two-factor authentication is not enabled.",
   "tokens_disabled": "Personal API tokens are disabled by your administrator.",
-  "worklog_incomplete": "The work log does not cover the required share of the worked time.",
-  "worklog_off": "The work log is switched off for this company.",
   "project_taken": "A project with this name already exists.",
   "lead_exists": "This person already has that role for this team in that period.",
   "type_not_requestable": "Your team lead or HR records this type.",
   "already_running": "The clock is already running.",
-  "worklog_overlap": "Overlaps another item of this day.",
   "invalid_password": "Password is incorrect.",
   "password_too_short": "Use at least 10 characters.",
   "password_too_long": "Use at most 256 characters.",
@@ -96,5 +97,15 @@
   "mfa_required": "Two-factor authentication is required for your account.",
   "invalid_admin_password": "Your password is not correct.",
   "backup_password_missing": "Set BACKUP_PASSWORD (12+ characters) on the server.",
-  "type_in_use": "This type is in use. Deactivate it instead."
+  "type_in_use": "This type is in use. Deactivate it instead.",
+  "projects_missing": "Some work has no project.",
+  "projects_off": "Projects are switched off for this company.",
+  "not_for_yourself": "Someone else has to do this for you: another administrator, HR or your team lead.",
+  "type_in_use_counting": "This type is in use. Its category and how it counts can no longer change; create a new type instead.",
+  "oidc_only": "Use single sign-on to sign in.",
+  "mfa_enrolment_required": "Set up two-factor authentication first.",
+  "before_cover": "You can see and change this person's data from the day your lead role started.",
+  "terms_order": "The current terms began later; pick that day or later.",
+  "schedule_gap": "A schedule has to apply from the employment start.",
+  "calendar_in_use": "This calendar counted for days already passed and can no longer be deleted."
 }

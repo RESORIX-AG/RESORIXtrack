@@ -160,7 +160,7 @@ export function HBarChart({ rows, ariaLabel, signed }: { rows: readonly HBar[]; 
         axis: CATEGORY_AXIS,
       },
       x: {
-        scale: () => scaleLinear().domain([ticks[0], ticks.at(-1)!]),
+        scale: () => scaleLinear().domain([ticks[0], ticks[ticks.length - 1]]),
         grid: GRID,
         axis: valueAxis(ticks, (v: number) => `${fmtMinutes(v, { sign: signed }).replace(/:00$/, "")} h`),
       },

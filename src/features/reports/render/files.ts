@@ -119,7 +119,10 @@ export function toCsv(
     if (typeof value === "number") return kind === "duration" ? num(value / 60, 2) : num(value, 2)
     return quote(safeText(value))
   }
-  const header = sheet.columns.map((c) => quote(c.kind === "duration" ? `${c.header} ${opts.hoursSuffix}` : c.header))
+  // headers carry admin-defined names (absence types, projects): guarded against formulas like the cells
+  const header = sheet.columns.map((c) =>
+    quote(safeText(c.kind === "duration" ? `${c.header} ${opts.hoursSuffix}` : c.header)),
+  )
   const lines = [
     header.join(sep),
     ...sheet.rows.map((r) => sheet.columns.map((c, i) => cell(r[i] ?? null, c.kind)).join(sep)),

@@ -1,7 +1,7 @@
 {
   "title": "Compte d'heures",
-  "opening": "Solde initial",
-  "opening_hint": "Report sur {year}",
+  "opening": "Report",
+  "opening_hint": "Solde fin {prev}",
   "target_year": "Heures dues",
   "until_yesterday": "Jusqu'à hier",
   "worked_year": "Heures effectuées",

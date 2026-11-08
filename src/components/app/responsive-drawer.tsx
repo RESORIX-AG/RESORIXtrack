@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { ReactNode, Ref } from "react"
 import {
   Drawer,
   DrawerContent,
@@ -18,6 +18,7 @@ export default function ResponsiveDrawer({
   srDescription,
   className,
   footer,
+  footerRef,
   meta,
   wrap,
   children,
@@ -29,6 +30,8 @@ export default function ResponsiveDrawer({
   srDescription: boolean
   className?: string
   footer?: ReactNode
+  /** where `OverlayActions` from the body render */
+  footerRef: Ref<HTMLDivElement>
   meta?: ReactNode
   /** wraps body and footer (the dialog's form, when it has an action) */
   wrap: (node: ReactNode) => ReactNode
@@ -45,11 +48,12 @@ export default function ResponsiveDrawer({
         {wrap(
           <>
             <div className={cn("min-h-0 flex-1 overflow-y-auto px-5 py-4", className)}>{children}</div>
-            {footer ? (
-              <DrawerFooter className="mt-0 flex-row flex-wrap items-center justify-end gap-2 border-t px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                {footer}
-              </DrawerFooter>
-            ) : null}
+            <DrawerFooter
+              ref={footerRef}
+              className="mt-0 flex-row flex-wrap items-center justify-end gap-2 border-t px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] empty:hidden"
+            >
+              {footer}
+            </DrawerFooter>
           </>,
         )}
       </DrawerContent>

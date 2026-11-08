@@ -65,7 +65,6 @@ Run `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm i18n:check`
 - No coverage gate: `pnpm test` runs without coverage; `vitest run --coverage` would need `@vitest/coverage-v8`, which is not installed.
 - Every write path tests permissions and sign-off locks.
 - `src/server/isolation.test.ts` crawls every server function and REST endpoint for data leaks; add new functions to its `SPECS`.
-- `src/server/services/__fixtures__/` holds v1 seal fixtures; `src/server/import-v1/import-v1.test.ts` covers the v1 import.
 - End-to-end tests live in `tests/e2e`.
 - CI (`.github/workflows/ci.yml`): lint, typecheck, translations, licenses, Vitest and Playwright on every push and pull request, then the Docker image build and `scripts/smoke.sh`.
 

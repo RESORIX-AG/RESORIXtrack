@@ -75,6 +75,40 @@ describe("day rules", () => {
     expect(dayFindings({ ...day, breakMin: 10, running: true }, RULES, FULL)).toEqual([])
   })
 
+  it("break_min: a night shift across midnight is one working day", () => {
+    const u = person()
+    work(u, "2026-11-02", "20:00", "04:00") // 8 h without a break, 4 h on each calendar day
+    work(u, "2026-11-04", "18:00", "06:00") // 12 h without a break
+    const f = of(periodFindings(u, "2026-11-02", "2026-11-05"), "break_min")
+    expect(f.map((x) => [x.date, x.value, x.limit])).toEqual([
+      ["2026-11-02", 0, 30],
+      ["2026-11-04", 0, 60],
+    ])
+  })
+
+  it("break_min counts 15 and 30 min in one piece, 60 min in pieces of 15; break_stretch after 5.5 h", () => {
+    const u = person()
+    // 8 h with three 10-minute gaps: no 30 min piece
+    work(u, "2026-11-02", "08:00", "10:00")
+    work(u, "2026-11-02", "10:10", "12:10")
+    work(u, "2026-11-02", "12:20", "14:20")
+    work(u, "2026-11-02", "14:30", "16:30")
+    // 9.5 h with breaks of 30 and 20 min plus 10 min: 50 min in pieces of 15, not enough
+    work(u, "2026-11-03", "07:00", "10:00")
+    work(u, "2026-11-03", "10:30", "13:30")
+    work(u, "2026-11-03", "13:50", "15:20")
+    work(u, "2026-11-03", "15:30", "17:30")
+    // 8 h with a 30 min break after 1 h, then 7 h in one go
+    work(u, "2026-11-04", "07:00", "08:00")
+    work(u, "2026-11-04", "08:30", "15:30")
+    const f = periodFindings(u, "2026-11-02", "2026-11-04").filter((x) => x.rule.startsWith("break"))
+    expect(f.map((x) => [x.date, x.rule, x.value, x.limit])).toEqual([
+      ["2026-11-02", "break_min", 10, 30],
+      ["2026-11-03", "break_min", 50, 60],
+      ["2026-11-04", "break_stretch", 420, 330],
+    ])
+  })
+
   it("daily_rest: below 8 h violation, once a week 8-11 h warning", () => {
     const u = person()
     work(u, "2026-11-02", "13:00", "22:00")
@@ -129,6 +163,13 @@ describe("day rules", () => {
     ])
     withSettings({ sunday_work_permitted: true })
     expect(of(periodFindings(u, "2026-11-08", "2026-11-08"), "sunday_work")[0].severity).toBe("info")
+  })
+
+  it("sunday_work: Saturday night alone counts, without work on Sunday", () => {
+    const u = person()
+    work(u, "2026-11-14", "18:00", "23:59")
+    const f = of(periodFindings(u, "2026-11-14", "2026-11-15"), "sunday_work")
+    expect(f.map((x) => [x.date, x.value])).toEqual([["2026-11-15", 59]])
   })
 
   it("compensatory_rest: > 5 h needs a rest day on a working day in the week before or after", () => {
@@ -278,7 +319,8 @@ describe("week and year rules", () => {
     ])
     const young = person({ vacationDaysPerYear: 20, birthDate: "2007-05-01" })
     expect(of(yearFindings(young, 2026), "vacation_minimum")[0]?.limit).toBe(25)
-    const part = makeUser({ employmentStart: "2025-01-01", vacationDaysPerYear: 12 })
+    // the full-time value, pro-rated by working days: 20 x 3/5 = 12 of a minimum of 12
+    const part = makeUser({ employmentStart: "2025-01-01", vacationDaysPerYear: 20 })
     makeSchedule(part.id, { validFrom: "2025-01-01", minutesThu: 0, minutesFri: 0 })
     expect(of(yearFindings(part, 2026), "vacation_minimum")).toEqual([])
   })

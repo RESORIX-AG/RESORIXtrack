@@ -1,6 +1,6 @@
 # Instructions for coding agents
 
-RESORIXtrack is a self-hosted time-tracking application by RESORIX AG: one TanStack Start app (React 19, SSR) with Drizzle on SQLite, Better Auth, Node 26, Docker Compose deployment. Version 1.x (Flask + Astro) lives in the git tag `v1.0.0`; `rt import-v1` migrates its data.
+RESORIXtrack is a self-hosted time-tracking application by RESORIX AG: one TanStack Start app (React 19, SSR) with Drizzle on SQLite, Better Auth, Node 26, Docker Compose deployment. Version 1.x (Flask + Astro) lives in the git tag `v1.0.0`.
 
 ## Where to read
 
@@ -10,7 +10,6 @@ RESORIXtrack is a self-hosted time-tracking application by RESORIX AG: one TanSt
 | Running locally, demo accounts, commands, tests, migrations, releasing | [docs/development.md](docs/development.md) |
 | Architecture and design rules | [docs/architecture.md](docs/architecture.md), [docs/design.md](docs/design.md) |
 | Production installation, environment variables, updates | [docs/installation.md](docs/installation.md), [.env.example](.env.example) |
-| Moving a 1.x installation to 2.x | [docs/migration-from-v1.md](docs/migration-from-v1.md) |
 | Security model and operator checklist | [docs/security.md](docs/security.md), [SECURITY.md](SECURITY.md) |
 | Swiss labour law checks and retention | [docs/compliance.md](docs/compliance.md), [docs/privacy.md](docs/privacy.md) |
 | Backups (encrypted) and restore | [docs/backup-restore.md](docs/backup-restore.md) |

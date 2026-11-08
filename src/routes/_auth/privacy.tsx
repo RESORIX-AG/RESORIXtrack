@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n"
 
 /** Privacy notice (revDSG Art. 19): the administrator's text, or a short default. Public. */
 export const Route = createFileRoute("/_auth/privacy")({
+  staticData: { titleKey: "auth.privacy" },
   loader: ({ context }) => context.queryClient.ensureQueryData(privacyQuery),
   component: Privacy,
 })

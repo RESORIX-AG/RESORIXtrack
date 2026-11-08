@@ -1,5 +1,5 @@
 /**
- * Projects people book work log items on: create and edit (name, code, colour, team or company-wide,
+ * Projects people book their time on: create and edit (name, code, colour, team or company-wide,
  * active) and the logged hours per project and person for a period.
  */
 import { keepPreviousData, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
@@ -21,11 +21,11 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { FilterSelect, SheetSubmit } from "@/features/admin/ui"
+import { createProjectFn, projectsQuery, updateProjectFn } from "@/features/projects/api"
 import { projectHoursQuery } from "@/features/reports/api"
 import { RangePicker } from "@/features/reports/controls"
 import { ProjectsPreview } from "@/features/reports/previews"
 import { todayIn } from "@/features/time/lib"
-import { createProjectFn, projectsQuery, updateProjectFn } from "@/features/worklog/api"
 import { monthRange } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import { useMe } from "@/lib/session"
@@ -128,6 +128,7 @@ export function ProjectsPage({
           <>
             {teamsInUse.length ? (
               <FilterSelect
+                searchable
                 label={t("common.team")}
                 value={team}
                 onChange={setTeam}

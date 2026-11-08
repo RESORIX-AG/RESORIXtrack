@@ -157,7 +157,7 @@ export async function renderReport(
     return { body, contentType: CONTENT_TYPES.xlsx, filename }
   }
   // CSV holds one table: the detail sheet where a report has several
-  const sheet = sheets.at(-1)!
+  const sheet = sheets[sheets.length - 1]
   return {
     body: toCsv(sheet, {
       locale,

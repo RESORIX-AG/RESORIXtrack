@@ -103,7 +103,9 @@ export function parseHeader(raw: Buffer): BackupHeader {
   try {
     const meta = HeaderSchema.parse(JSON.parse(raw.toString("utf8")))
     const salt = Buffer.from(meta.salt, "base64")
-    if (salt.length !== 16 || meta.chunk > 64 * 1024 * 1024 || meta.m > 1024 * 1024) throw new Error("limits")
+    // a crafted header must not stall the KDF for hours or exhaust memory
+    if (salt.length !== 16 || meta.chunk > 64 * 1024 * 1024 || meta.m > 1024 * 1024 || meta.t > 10 || meta.p > 16)
+      throw new Error("limits")
     return meta
   } catch {
     throw new BackupCryptoError("Damaged backup header")

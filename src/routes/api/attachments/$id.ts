@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs"
 import { createFileRoute } from "@tanstack/react-router"
-import { auth } from "@/server/auth"
 import { toAppError } from "@/server/errors"
+import { requestActor } from "@/server/request-actor"
 import { getAttachmentFile } from "@/server/services/attachments"
-import { loadActor } from "@/server/services/permissions"
 
 const INLINE_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"])
 
@@ -18,9 +17,8 @@ export const Route = createFileRoute("/api/attachments/$id")({
     handlers: {
       GET: async ({ request, params }) => {
         try {
-          const session = await auth.api.getSession({ headers: request.headers })
-          const actor = session ? loadActor(Number(session.user.id)) : null
-          if (!actor?.user.isActive)
+          const actor = await requestActor(request.headers)
+          if (!actor)
             return Response.json({ error: { code: "unauthorized", message: "Please sign in" } }, { status: 401 })
           const id = Number(params.id)
           if (!Number.isInteger(id) || id <= 0)

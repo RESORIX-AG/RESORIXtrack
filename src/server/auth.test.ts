@@ -4,13 +4,14 @@ import { beforeEach, describe, expect, it } from "vitest"
 import { makeUser, withSettings } from "@/test/factories"
 import { auth, setAuthMailer } from "./auth"
 import { db } from "./db"
-import { apikey, loginAttempts, session, users } from "./db/schema"
+import { apikey, loginAttempts, passkey, session, users } from "./db/schema"
 import { clearMailOutbox, mailOutbox } from "./services/mail"
+import { grantPasskeyRegistration } from "./services/passkey-step-up"
 import { afterPasswordChanged } from "./services/profile"
 import { setPassword } from "./services/user-auth"
 
 const PW = "correct horse battery"
-const UA = { "user-agent": "vitest", "x-real-ip": "10.0.0.1" }
+const UA = { "user-agent": "vitest", "x-resorixtrack-peer": "10.0.0.1" }
 
 function cookieHeader(res: { headers: Headers }, prev = ""): string {
   const jar = new Map(prev ? prev.split("; ").map((c) => c.split("=") as [string, string]) : [])
@@ -115,8 +116,8 @@ describe("password change", () => {
 })
 
 describe("two-factor", () => {
-  it("enrols, clears the re-enrolment flag and logs both sign-in steps", async () => {
-    const u = await person({ mfaReenrolRequired: true })
+  it("enrols and logs both sign-in steps", async () => {
+    const u = await person()
     const s = await signIn(u.email)
     const headers = new Headers({ cookie: s.cookie, ...UA })
     const enabled = await auth.api.enableTwoFactor({ body: { password: PW }, headers })
@@ -125,21 +126,24 @@ describe("two-factor", () => {
     await auth.api.verifyTOTP({ body: { code: totp(secret) }, headers })
     expect(db.select().from(users).where(eq(users.id, u.id)).get()).toMatchObject({
       twoFactorEnabled: true,
-      mfaReenrolRequired: false,
     })
 
     const login = await signIn(u.email)
     expect(login.res.twoFactorRedirect).toBe(true)
     const challenge = new Headers({ cookie: login.cookie, ...UA })
     await expect(auth.api.verifyTOTP({ body: { code: "000000" }, headers: challenge })).rejects.toThrow()
-    await auth.api.verifyTOTP({ body: { code: totp(secret) }, headers: challenge })
-    expect(
-      attempts()
-        .slice(0, 2)
-        .map((r) => [r.reason, r.success]),
-    ).toEqual([
+    // "trust this device" is never granted, whatever the client asks for
+    const verified = await auth.api.verifyTOTP({
+      body: { code: totp(secret), trustDevice: true },
+      headers: challenge,
+      returnHeaders: true,
+    })
+    expect(verified.headers.getSetCookie().some((c) => c.includes("trust_device"))).toBe(false)
+    // the password step of a two-factor sign-in is not a sign-in of its own
+    expect(attempts().map((r) => [r.reason, r.success])).toEqual([
       ["ok", true],
       ["mfa_failed", false],
+      ["ok", true],
     ])
   })
 
@@ -188,5 +192,67 @@ describe("password reset", () => {
     const u = makeUser({ email: "new@example.nomail" })
     await auth.api.requestPasswordReset({ body: { email: u.email } })
     expect(mailOutbox().map((m) => [m.kind, m.to])).toEqual([["invite", u.email]])
+  })
+})
+
+const ORIGIN = "http://localhost:3210"
+const post = (route: string, cookie: string, body: unknown = {}) =>
+  auth.handler(
+    new Request(`${ORIGIN}/api/auth${route}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN, cookie, ...UA },
+      body: JSON.stringify(body),
+    }),
+  )
+
+describe("endpoints the app only uses on the server", () => {
+  it("are not reachable over HTTP, so their checks cannot be skipped", async () => {
+    const u = await person()
+    const { cookie } = await signIn(u.email)
+    expect((await post("/api-key/create", cookie, { name: "x" })).status).toBe(404)
+    expect((await post("/api-key/update", cookie, { keyId: "1", enabled: true })).status).toBe(404)
+    expect((await post("/update-user", cookie, { name: "" })).status).toBe(404)
+    expect((await post("/change-password", cookie, { currentPassword: PW, newPassword: "x".repeat(12) })).status).toBe(
+      404,
+    )
+    expect(
+      db
+        .select()
+        .from(apikey)
+        .where(eq(apikey.referenceId, String(u.id)))
+        .all(),
+    ).toEqual([])
+  })
+})
+
+describe("passkeys", () => {
+  it("can only be registered right after confirming the password", async () => {
+    const u = await person()
+    const { cookie } = await signIn(u.email)
+    const options = () =>
+      auth.handler(new Request(`${ORIGIN}/api/auth/passkey/generate-register-options`, { headers: { cookie, ...UA } }))
+    const refused = await options()
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { code: string }).code).toBe("PASSWORD_CONFIRMATION_REQUIRED")
+    grantPasskeyRegistration(u.id)
+    expect((await options()).status).toBe(200)
+  })
+
+  it("replace the password when two-factor is required and TOTP is off", async () => {
+    const u = await person()
+    db.insert(passkey)
+      .values({
+        userId: u.id,
+        publicKey: "k",
+        credentialID: "c",
+        counter: 0,
+        deviceType: "singleDevice",
+        backedUp: false,
+      })
+      .run()
+    withSettings({ mfa_required_for_all: true })
+    await expect(signIn(u.email)).rejects.toMatchObject({ body: { code: "USE_STRONG_SIGN_IN" } })
+    expect(db.select().from(session).where(eq(session.userId, u.id)).all()).toEqual([])
+    expect(attempts()[0]).toMatchObject({ reason: "mfa_required", success: false })
   })
 })

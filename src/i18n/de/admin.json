@@ -1,5 +1,6 @@
 {
   "common": {
+    "changes_from_title": "Ab wann gelten die Änderungen?",
     "range": "{from}–{to} von {total}"
   },
   "roles": {
@@ -65,7 +66,19 @@
     "recording_simplified_short": "Vereinfacht",
     "recording_waived_short": "Verzicht",
     "regular_night_work": "Regelmässige Nachtarbeit",
-    "regular_night_work_help": "ArG Art. 17b: 10 % Zeitgutschrift"
+    "regular_night_work_help": "ArG Art. 17b: 10 % Zeitgutschrift",
+    "terms_from": "Änderungen gelten ab",
+    "terms_from_help": "Frühere Tage behalten die bisherigen Werte.",
+    "vacation_days_help": "Vollzeit, 5-Tage-Woche; weniger Arbeitstage kürzen ihn",
+    "earlier": "Früher",
+    "earlier_terms": "Bedingungen bis {date}",
+    "earlier_period": "Angestellt {start} bis {end}",
+    "current_terms_from": "Aktuelle Bedingungen seit {date}",
+    "rehire": "Wieder anstellen",
+    "rehire_title": "{name} wieder anstellen",
+    "rehire_help": "Eine neue Anstellung beginnt. Die frühere bleibt, wie sie war, ihre Monate unverändert.",
+    "rehire_start": "Neuer Anstellungsbeginn",
+    "rehired": "Wieder angestellt"
   },
   "schedule": {
     "title": "Arbeitszeitmodell",
@@ -95,7 +108,8 @@
     "new_title": "Neues Arbeitszeitmodell",
     "planned": "Geplant",
     "reason_required": "Begründung (erforderlich)",
-    "reason_placeholder": "z. B. neuer Vertrag"
+    "reason_placeholder": "z. B. neuer Vertrag",
+    "gap": "Kein Arbeitsplan vom {from} bis {to}: Diese Tage haben kein Soll. Eine Version ab {from} erfassen."
   },
   "vacation": {
     "title": "Anspruch pro Jahr",
@@ -184,6 +198,7 @@
       "attachment": "Dokument",
       "signoff": "Monatsabschluss",
       "api_token": "API-Token",
+      "holiday": "Feiertag",
       "work_log": "Tätigkeit",
       "project": "Projekt",
       "team_lead": "Leitung / Stellvertretung"
@@ -231,6 +246,8 @@
       "vacation_days_per_year": "Ferientage",
       "is_active": "Aktiv",
       "holiday_calendar_id": "Feiertagskalender",
+      "calendar_id": "Kalender",
+      "fraction": "Tagesanteil",
       "note": "Notiz",
       "start_half": "Beginn",
       "end_half": "Ende",
@@ -261,7 +278,15 @@
       "minutes_thu": "Do",
       "minutes_fri": "Fr",
       "minutes_sat": "Sa",
-      "minutes_sun": "So"
+      "minutes_sun": "So",
+      "scheduled_end_at": "Geplantes Ausstempeln",
+      "capabilities": "Berechtigungen",
+      "locale": "Sprache",
+      "legal_weekly_max_hours": "Gesetzliche Höchstarbeitszeit",
+      "recording_mode": "Zeiterfassung",
+      "arg_exempt": "Vom Arbeitsgesetz ausgenommen",
+      "regular_night_work": "Regelmässige Nachtarbeit",
+      "birth_date": "Geburtsdatum"
     },
     "sources": {
       "web": "Web",
@@ -273,7 +298,8 @@
       "demo": "Demo",
       "import": "Import",
       "cli": "Kommandozeile",
-      "worker": "Automatisch"
+      "worker": "Automatisch",
+      "setup": "Ersteinrichtung"
     }
   },
   "backups": {
@@ -325,7 +351,8 @@
       "reset_requested": "Reset angefordert",
       "mfa_failed": "Falscher Zwei-Faktor-Code",
       "invalid_mfa": "Falscher Zwei-Faktor-Code",
-      "passkey": "Mit Passkey angemeldet"
+      "passkey": "Mit Passkey angemeldet",
+      "mfa_required": "Passwort allein nicht erlaubt"
     }
   },
   "branding": {
@@ -386,9 +413,6 @@
     "n_holidays_one": "{count} Feiertag",
     "n_holidays_other": "{count} Feiertage",
     "usage": "{teams} Teams, {users} Personen",
-    "from_preset": "Aus Vorlage",
-    "empty_calendar": "Leer",
-    "preset": "Kanton oder Vorlage",
     "preset_years": "Feiertage für {from} und {to}",
     "preset_installed": "Kalender erstellt",
     "use_as_default": "Firmenstandard",
@@ -414,6 +438,11 @@
     "canton": "Kanton",
     "preset_hint": "Ergänzt jedes Jahr im Oktober",
     "no_preset": "Keine Vorlage",
+    "always_included": "Immer dabei",
+    "optional_days": "Wählbare Tage",
+    "optional_days_hint": "Angekreuzte Tage kommen jedes Jahr dazu. Gemeindefeiertage gelten im grössten Teil des Kantons.",
+    "not_in": "Nicht in {communes}",
+    "not_in_more": "Nicht in {communes} und {count} weiteren",
     "kind": {
       "federal": "Bund",
       "cantonal": "Kantonal",
@@ -432,7 +461,6 @@
     "deputies": "Stellvertretung",
     "members": "Mitglieder",
     "calendar": "Feiertagskalender",
-    "calendar_default": "Firmenstandard",
     "color": "Farbe",
     "no_lead": "Keine Leitung",
     "no_lead_help": "Ohne Leitung entscheidet HR über Anträge.",
@@ -484,7 +512,8 @@
     "key_invalid": "Verwende Kleinbuchstaben, Ziffern und _",
     "sort": "Reihenfolge",
     "delete_title": "{name} löschen?",
-    "deleted": "Art gelöscht"
+    "deleted": "Art gelöscht",
+    "counting_locked": "In Verwendung: Kategorie und Anrechnung sind fest."
   },
   "settings": {
     "title": "Einstellungen",
@@ -500,18 +529,18 @@
     },
     "groups": {
       "company": "Firma",
-      "defaults": "Standards für neue Personen",
       "hours": "Stunden und Feiertage",
+      "vacation": "Ferien",
       "corrections": "Korrekturen und Leitung",
       "sick": "Krankmeldungen",
-      "worklog": "Tätigkeiten",
       "compliance": "Prüfungen (ArG)",
       "retention": "Aufbewahrung",
       "mfa": "Zwei-Faktor",
       "api": "API",
       "sessions": "Anmeldeprotokoll",
       "privacy": "Datenschutzhinweis",
-      "surcharges": "Sonn- und Feiertagsarbeit"
+      "surcharges": "Sonn- und Feiertagsarbeit",
+      "projects": "Projekte"
     },
     "units": {
       "hhmm": "h:mm",
@@ -522,22 +551,18 @@
     },
     "fields": {
       "company_name": "Firmenname",
-      "default_timezone": "Zeitzone",
-      "default_locale": "Sprache",
+      "default_timezone": "Zeitzone der Firma",
+      "default_locale": "Standardsprache",
       "default_vacation_days": "Ferientage / Jahr",
       "fulltime_weekly_minutes": "Vollzeitwoche",
       "holiday_mode": "Feiertage reduzieren das Soll",
       "holiday_work_surcharge_percent": "Zuschlag Sonn-/Feiertagsarbeit",
-      "vacation_prorate_workdays": "Ferien nach Arbeitstagen anteilig",
       "reason_required_for_past_edits": "Begründung für rückwirkende Änderungen",
       "lead_can_edit_schedules": "Leitung ändert Arbeitszeitmodelle",
       "lead_can_adjust_balances": "Leitung korrigiert Salden",
       "clock_reminder_hours": "Erinnerung zum Ausstempeln nach",
       "sick_self_report_backdate_days": "Selbstmeldung rückwirkend bis",
       "sick_self_report_max_days": "Max. Dauer Selbstmeldung",
-      "worklog_mode": "Tätigkeiten",
-      "worklog_required_percent": "Erforderlicher Anteil",
-      "worklog_project_required": "Projekt erforderlich",
       "compliance_enabled": "Betrieb untersteht dem Arbeitsgesetz",
       "break_enforcement": "Einstempeln vor der gesetzlichen Mindestpause und Ruhezeit sperren",
       "weekly_max_minutes": "Gesetzliche Höchstarbeitszeit",
@@ -549,9 +574,13 @@
       "api_tokens_enabled": "Persönliche API-Tokens",
       "login_log_retention_days": "Anmeldeprotokoll aufbewahren für",
       "privacy_notice": "Text auf /privacy",
-      "holiday_work_surcharge_mode": "Zuschlag als"
+      "holiday_work_surcharge_mode": "Zuschlag als",
+      "project_mode": "Projekte auf Zeiteinträgen"
     },
     "help": {
+      "default_timezone": "Zählt die Tage der Firma (Abschluss, Erinnerungen); Vorgabe für neue Personen.",
+      "default_locale": "Vorgabe für neue Personen und die Anmeldeseite.",
+      "default_vacation_days": "Standard für neue Personen",
       "fulltime_weekly_minutes": "Standardmodell, z. B. 42:00",
       "holiday_work_surcharge_percent": "ArG Art. 19: 50 % bei vorübergehender Arbeit",
       "clock_reminder_hours": "0 = aus",
@@ -559,26 +588,28 @@
       "night_work_permitted": "Befunde werden nur noch als Info angezeigt",
       "sunday_work_permitted": "Befunde werden nur noch als Info angezeigt",
       "retention_years": "Mindestens 5 (ArGV 1 Art. 73)",
-      "worklog_required_percent": "Anteil der Arbeitszeit pro Tag",
       "compliance_enabled": "Ausgenommen sind z. B. öffentliche Verwaltungen, Landwirtschaft, private Haushalte (Art. 2 ArG)",
       "break_enforcement": "Art. 15 und 15a ArG. Ein manueller Eintrag bleibt möglich.",
-      "holiday_work_surcharge_mode": "Lohn: im Bericht für die Lohnabrechnung. Zeitgutschrift: gemäss GAV."
+      "holiday_work_surcharge_mode": "Lohn: im Bericht für die Lohnabrechnung. Zeitgutschrift: gemäss GAV.",
+      "project_mode": "Pflicht: Jeder Arbeitseintrag braucht ein Projekt, bevor der Monat abgeschlossen werden kann."
     },
     "options": {
       "holiday_mode": {
         "scheduled": "An Arbeitstagen",
         "prorata": "Anteilig"
       },
-      "worklog_mode": {
-        "off": "Aus",
-        "optional": "Freiwillig",
-        "required": "Pflicht"
-      },
       "holiday_work_surcharge_mode": {
         "payroll": "Lohn",
         "time_credit": "Zeitgutschrift"
+      },
+      "project_mode": {
+        "off": "Aus",
+        "optional": "Freiwillig",
+        "required": "Pflicht"
       }
-    }
+    },
+    "valid_from": "Änderungen gelten ab",
+    "valid_from_help": "Frühere Tage behalten die bisherigen Regeln; nie vor dem letzten abgeschlossenen Monat."
   },
   "api_keys": {
     "revoked": "Widerrufen",

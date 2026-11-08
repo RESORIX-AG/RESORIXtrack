@@ -1,6 +1,6 @@
 {
   "title": "Feiertage",
-  "sub": "Die Feiertage, die für dich gelten. An deinen Arbeitstagen reduzieren sie die Sollzeit; bearbeiten kannst du sie nicht.",
+  "sub": "Die Feiertage, die für dich gelten. An deinen Arbeitstagen reduzieren sie die Sollzeit.",
   "manage": "Kalender verwalten",
   "source_user": "dir persönlich zugewiesen",
   "source_team": "Kalender deines Teams ({team})",

@@ -2,7 +2,7 @@ import type { AnyFormApi } from "@tanstack/react-form"
 import { useId } from "react"
 import { Segmented } from "@/components/app/segmented"
 import { SettingRow, SettingsGroup } from "@/components/app/settings"
-import { ColorDot } from "@/components/app/status-badge"
+import { ColorDot, StatusBadge } from "@/components/app/status-badge"
 import { useAppForm } from "@/components/form/form"
 import { Combobox } from "@/components/ui/combobox"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
@@ -184,6 +184,7 @@ export function ContractFields({ form, create, rows }: { form: UserForm; create?
             controlClassName="md:w-28"
             className="text-right tabular"
             label={t("admin.users.vacation_days")}
+            description={t("admin.users.vacation_days_help")}
             type="number"
             min={0}
             max={366}
@@ -291,7 +292,12 @@ export function RegionFields({ form, refs, rows }: { form: UserForm; refs: UserR
               { value: "0", label: t("admin.users.calendar_inherit") },
               ...refs.calendars.map((c) => ({
                 value: String(c.id),
-                label: c.isDefault ? `${c.name} (${t("admin.holidays.default")})` : c.name,
+                label: c.name,
+                badge: c.isDefault ? (
+                  <StatusBadge tone="brand" className="shrink-0">
+                    {t("admin.holidays.default")}
+                  </StatusBadge>
+                ) : undefined,
               })),
             ]}
           />

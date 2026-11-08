@@ -19,6 +19,7 @@ export interface ComboboxOption {
   label: string
   hint?: string
   icon?: ReactNode
+  badge?: ReactNode
 }
 
 /**
@@ -77,7 +78,8 @@ export function Combobox({
       >
         <span className="flex min-w-0 items-center gap-2 truncate">
           {current?.icon}
-          {current?.label ?? placeholder ?? t("common.search")}
+          <span className="min-w-0 truncate">{current?.label ?? placeholder ?? t("common.search")}</span>
+          {current?.badge}
         </span>
         <ChevronDown className="size-4 text-muted-foreground" />
       </PopoverTrigger>
@@ -111,6 +113,7 @@ export function Combobox({
                 >
                   {o.icon}
                   <span className="min-w-0 truncate">{o.label}</span>
+                  {o.badge}
                   {o.hint ? <CommandHint>{o.hint}</CommandHint> : null}
                 </CommandItem>
               ))}

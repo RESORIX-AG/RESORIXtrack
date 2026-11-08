@@ -1,7 +1,7 @@
 {
   "title": "Time account",
-  "opening": "Opening balance",
-  "opening_hint": "Carried into {year}",
+  "opening": "Carried over",
+  "opening_hint": "Balance at the end of {prev}",
   "target_year": "Target hours",
   "until_yesterday": "Up to yesterday",
   "worked_year": "Worked hours",

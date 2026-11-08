@@ -9,13 +9,14 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { and, count, eq } from "drizzle-orm"
 import { db } from "../db"
-import { type Attachment, attachments, type User } from "../db/schema"
+import { type Absence, type Attachment, attachments, type User } from "../db/schema"
 import { env } from "../env"
 import { Conflict, Forbidden, NotFound, Validation } from "../errors"
 import { absenceTypesById } from "./absence-types"
-import { getAbsence, visibleAbsence } from "./absences"
+import { getAbsence, isActiveState, visibleAbsence } from "./absences"
+import { ensureOpenDates } from "./locks"
 import { notify } from "./notifications"
-import { type Actor, canManageUser, canViewUser, getUserOr404 } from "./permissions"
+import { type Actor, beforeCover, canManageUser, canViewUser, getUserOr404, seesDate } from "./permissions"
 import { record, snapshot } from "./revisions"
 
 export const MAX_ATTACHMENTS_PER_ABSENCE = 10
@@ -70,8 +71,9 @@ export function addAttachment(
   const t = absenceTypesById().get(a.typeId)!
   if (!t.allowsAttachments)
     throw new Validation(`Attachments are not available for '${t.label}'`, { fields: { file: "not_allowed" } })
-  if (a.status !== "pending" && a.status !== "approved")
-    throw new Conflict("This absence is closed", { code: "invalid_state" })
+  if (!isActiveState(a.status)) throw new Conflict("This absence is closed", { code: "invalid_state" })
+  if (!seesDate(actor, owner, a.startDate)) throw beforeCover(actor, owner)
+  ensureOpenDates(owner, a.startDate, a.endDate)
   const { data } = upload
   if (!data.length) throw new Validation("The file is empty", { fields: { file: "empty" } })
   if (data.length > env.attachmentMaxMb * 1024 * 1024)
@@ -117,12 +119,13 @@ export function addAttachment(
   }
 }
 
-function loadVisible(actor: Actor, attachmentId: number): { att: Attachment; owner: User } {
+function loadVisible(actor: Actor, attachmentId: number): { att: Attachment; absence: Absence; owner: User } {
   const att = db.select().from(attachments).where(eq(attachments.id, attachmentId)).get()
   if (!att || att.isDeleted) throw new NotFound("Attachment not found")
-  const owner = getUserOr404(getAbsence(att.absenceId).userId)
-  if (!canViewUser(actor, owner)) throw new NotFound("Attachment not found")
-  return { att, owner }
+  const absence = getAbsence(att.absenceId)
+  const owner = getUserOr404(absence.userId)
+  if (!canViewUser(actor, owner) || !seesDate(actor, owner, absence.endDate)) throw new NotFound("Attachment not found")
+  return { att, absence, owner }
 }
 
 /** The attachment and its file path, if the actor may read it (the person, their leads, HR). */
@@ -134,8 +137,11 @@ export function getAttachmentFile(actor: Actor, attachmentId: number): { attachm
 }
 
 export function deleteAttachment(actor: Actor, attachmentId: number, reason = ""): void {
-  const { att, owner } = loadVisible(actor, attachmentId)
+  const { att, absence, owner } = loadVisible(actor, attachmentId)
   if (!(actor.isHr || att.uploadedById === actor.id || canManageUser(actor, owner))) throw new Forbidden("Not allowed")
+  if (!isActiveState(absence.status)) throw new Conflict("This absence is closed", { code: "invalid_state" })
+  if (!seesDate(actor, owner, absence.startDate)) throw beforeCover(actor, owner)
+  ensureOpenDates(owner, absence.startDate, absence.endDate)
   const before = snapshot("attachment", att)
   const updated = db.update(attachments).set({ isDeleted: true }).where(eq(attachments.id, att.id)).returning().get()
   record({ entity: "attachment", row: updated, action: "delete", actor, subjectUserId: owner.id, before, reason })

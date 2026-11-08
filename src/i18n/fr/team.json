@@ -58,7 +58,6 @@
   "now": "Maintenant",
   "off": "Absent·e",
   "working_since": "Présent·e depuis {time}",
-  "break_since": "Pause depuis {time}",
   "worked_target": "Effectué / objectif",
   "signoff": "Validation",
   "not_signed": "Ouvert",

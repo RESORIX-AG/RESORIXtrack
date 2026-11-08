@@ -30,11 +30,11 @@
   "overnight_fix": "Fix",
   "findings_one": "{count} labour-law finding",
   "findings_other": "{count} labour-law findings",
-  "worklog_missing": "Work log missing for {date}",
-  "worklog_add": "Add",
   "ring_today": "today",
   "day_off": "Day off today",
   "legend_reached": "Target reached",
   "legend_worked": "Worked",
-  "legend_target": "Target"
+  "legend_target": "Target",
+  "project_missing": "Work without a project on {date}",
+  "project_fix": "Assign"
 }

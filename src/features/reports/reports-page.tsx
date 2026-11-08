@@ -59,7 +59,7 @@ export function ReportsPage({
   const me = useMe()
   const b = useBootstrap()
   const today = useToday()
-  const tabs = tabsFor(me, b.company.worklogMode !== "off")
+  const tabs = tabsFor(me, b.company.projectMode !== "off")
   const r = resolveReport(search, me, today, tabs)
   const { busy, download } = useDownload()
   // reports are expensive on the server: a tab renders once visited, then stays alive (filters, sort, scroll)

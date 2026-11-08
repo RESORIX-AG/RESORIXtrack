@@ -44,9 +44,16 @@
       }
     },
     {
+      "files": ["src/features/**", "src/components/**"],
+      "rules": {
+        "typescript/no-non-null-assertion": "error"
+      }
+    },
+    {
       "files": ["**/*.test.ts", "**/*.test.tsx", "tests/**", "src/test/**"],
       "rules": {
-        "typescript/no-unsafe-type-assertion": "off"
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/no-non-null-assertion": "off"
       }
     }
   ]

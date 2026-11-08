@@ -12,6 +12,14 @@ function maskUnknown(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : `${email.slice(0, 2)}***`
 }
 
+const userIdByEmail = (email: string) =>
+  email ? (db.select({ id: users.id }).from(users).where(eq(users.email, email)).get()?.id ?? null) : null
+
+/** How an attempt with this email is stored: as typed for a known person, masked otherwise. */
+function storedEmail(email: string, userId: number | null): string {
+  return (userId != null ? email : maskUnknown(email)).slice(0, 254)
+}
+
 export function recordLoginAttempt(opts: {
   email: string
   userId?: number | null
@@ -19,21 +27,16 @@ export function recordLoginAttempt(opts: {
   reason: string
   headers?: Headers | null
 }): void {
-  let userId = opts.userId ?? null
-  if (userId == null && opts.email) {
-    userId = db.select({ id: users.id }).from(users).where(eq(users.email, opts.email)).get()?.id ?? null
-    if (userId == null && opts.reason === "invalid_password") opts.reason = "unknown_user"
-  }
-  const stored =
-    userId != null || ["throttled", "reset_requested"].includes(opts.reason) ? opts.email : maskUnknown(opts.email)
+  const userId = opts.userId ?? userIdByEmail(opts.email)
+  const reason = userId == null && opts.reason === "invalid_password" ? "unknown_user" : opts.reason
   db.insert(loginAttempts)
     .values({
-      email: stored.slice(0, 254),
+      email: storedEmail(opts.email, userId),
       userId,
       ip: clientIp(opts.headers),
       userAgent: (opts.headers?.get("user-agent") ?? "").slice(0, 300),
       success: opts.success,
-      reason: opts.reason,
+      reason,
     })
     .run()
 }
@@ -83,7 +86,13 @@ export function recordThrottled(email: string, headers: Headers | null | undefin
   const last = db
     .select({ reason: loginAttempts.reason })
     .from(loginAttempts)
-    .where(and(eq(loginAttempts.email, email), eq(loginAttempts.ip, clientIp(headers)), gte(loginAttempts.at, since)))
+    .where(
+      and(
+        eq(loginAttempts.email, storedEmail(email, userIdByEmail(email))),
+        eq(loginAttempts.ip, clientIp(headers)),
+        gte(loginAttempts.at, since),
+      ),
+    )
     .orderBy(desc(loginAttempts.at), desc(loginAttempts.id))
     .limit(1)
     .get()

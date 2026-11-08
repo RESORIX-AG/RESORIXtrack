@@ -43,7 +43,7 @@
     "pending_absence": "Richieste aperte",
     "not_employed": "Non impiegato",
     "already_signed": "Già firmato",
-    "worklog_incomplete": "Diario di lavoro incompleto"
+    "projects_missing": "Progetti mancanti"
   },
   "sign": "Firma",
   "select_person": "Seleziona {name}",
@@ -63,6 +63,6 @@
     "pending_absence": "Decidi prima sulle richieste di assenza aperte.",
     "not_employed": "Non impiegato in questo mese.",
     "already_signed": "Già firmato.",
-    "worklog_incomplete": "In alcuni giorni mancano voci nel diario di lavoro."
+    "projects_missing": "Parte del lavoro non ha un progetto."
   }
 }

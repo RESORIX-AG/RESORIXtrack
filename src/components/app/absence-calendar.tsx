@@ -59,7 +59,8 @@ function keyTarget(e: KeyboardEvent, date: string): string | null {
     case "PageUp":
     case "PageDown": {
       const m = addMonthsStr(date.slice(0, 7), e.key === "PageUp" ? -1 : 1)
-      const last = monthDays(m).at(-1)!
+      const days = monthDays(m)
+      const last = days[days.length - 1]
       const d = `${m}-${date.slice(8)}`
       return d > last ? last : d
     }
@@ -216,7 +217,10 @@ export function AbsenceCalendar({
                           : "flex min-h-14 flex-col items-stretch gap-1 p-1 text-left hover:bg-accent sm:min-h-20 sm:p-1.5",
                         off && (compact ? "text-faint-foreground" : "bg-muted/50 text-muted-foreground"),
                         cell?.holiday && "bg-holiday/12",
-                        selected && (compact ? "bg-primary/30" : "bg-brand-soft ring-1 ring-primary/50"),
+                        selected &&
+                          (compact
+                            ? "bg-primary/30 hover:bg-primary/40"
+                            : "bg-brand-soft ring-1 ring-primary/50 hover:bg-brand-soft"),
                         compact && isToday && "font-semibold text-primary ring-1 ring-primary",
                       )}
                       style={compact && !selected ? compactFill(marks[0]) : undefined}

@@ -3,9 +3,11 @@
  * phones. One structure everywhere: header (title, optional `meta` line such as a status badge), a scrolling
  * body, and a sticky footer with the actions: `footer` on the right (primary last), `footerStart` far left
  * (a quiet destructive action). Paddings: `px-5`, header `py-4`, body `py-4`, footer `py-3` with a hairline.
+ * Actions never sit in the body: a form nested in the body puts its buttons in the footer with `OverlayActions`.
  * Plain confirmations use ConfirmDialog.
  */
-import { lazy, type ReactNode, Suspense, useSyncExternalStore } from "react"
+import { createContext, lazy, type ReactNode, Suspense, use, useState, useSyncExternalStore } from "react"
+import { createPortal } from "react-dom"
 import {
   Dialog,
   DialogContent,
@@ -33,6 +35,21 @@ const DIALOG_WIDTH: Record<SheetSize, string> = {
   md: "sm:max-w-xl",
   lg: "sm:max-w-3xl",
   xl: "sm:max-w-5xl",
+}
+
+/** The footer of the enclosing overlay, where `OverlayActions` renders. */
+export const ActionsSlot = createContext<HTMLElement | null>(null)
+
+/** Buttons for the sticky footer of the enclosing ResponsiveDialog or EditorSheet, from a form in its body. */
+export function OverlayActions({ children }: { children: ReactNode }) {
+  const slot = use(ActionsSlot)
+  return slot ? createPortal(children, slot) : null
+}
+
+/** The footer element and the body wrapped so `OverlayActions` inside it reaches the footer. */
+export function useActionsSlot(children: ReactNode) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  return { footerRef: setSlot, body: <ActionsSlot value={slot}>{children}</ActionsSlot> }
 }
 
 const QUERY = "(max-width: 767px)"
@@ -92,6 +109,7 @@ export function ResponsiveDialog({
       </>
     ) : null
   const phone = useIsPhone()
+  const { footerRef, body } = useActionsSlot(children)
   const asForm = (node: ReactNode) =>
     action ? (
       <form action={action} className="contents">
@@ -114,9 +132,10 @@ export function ResponsiveDialog({
           className={className}
           footer={actions}
           meta={meta}
+          footerRef={footerRef}
           wrap={asForm}
         >
-          {children}
+          {body}
         </PhoneDrawer>
       </Suspense>
     )
@@ -132,12 +151,13 @@ export function ResponsiveDialog({
           </DialogHeader>
           {asForm(
             <>
-              <div className={cn("max-h-[70dvh] overflow-y-auto px-5 py-4", className)}>{children}</div>
-              {actions ? (
-                <DialogFooter className="m-0 flex-row flex-wrap items-center justify-end gap-2 rounded-b-xl border-t px-5 py-3">
-                  {actions}
-                </DialogFooter>
-              ) : null}
+              <div className={cn("max-h-[70dvh] overflow-y-auto px-5 py-4", className)}>{body}</div>
+              <DialogFooter
+                ref={footerRef}
+                className="m-0 flex-row flex-wrap items-center justify-end gap-2 rounded-b-xl border-t px-5 py-3 empty:hidden"
+              >
+                {actions}
+              </DialogFooter>
             </>,
           )}
         </DialogContent>
@@ -154,12 +174,13 @@ export function ResponsiveDialog({
         </SheetHeader>
         {asForm(
           <>
-            <div className={cn("min-h-0 flex-1 overflow-y-auto px-5 py-4", className)}>{children}</div>
-            {actions ? (
-              <SheetFooter className="mt-0 flex-row flex-wrap items-center justify-end gap-2 border-t px-5 py-3">
-                {actions}
-              </SheetFooter>
-            ) : null}
+            <div className={cn("min-h-0 flex-1 overflow-y-auto px-5 py-4", className)}>{body}</div>
+            <SheetFooter
+              ref={footerRef}
+              className="mt-0 flex-row flex-wrap items-center justify-end gap-2 border-t px-5 py-3 empty:hidden"
+            >
+              {actions}
+            </SheetFooter>
           </>,
         )}
       </SheetContent>

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm"
 /**
  * Test data builders. Keep them minimal and explicit; every test states the data it relies on.
  *
@@ -6,11 +7,12 @@
  *   const emp = makeUser({ teamId: team.id }); makeSchedule(emp.id, { validFrom: "2026-01-01" })
  *   const actor = loadActor(emp.id)
  */
+import type { Json } from "@/lib/json"
 import { db } from "@/server/db"
 import * as s from "@/server/db/schema"
 import { ensureDefaultAbsenceTypes } from "@/server/services/absence-types"
 import { loadActor } from "@/server/services/permissions"
-import { updateSettings } from "@/server/services/settings"
+import { type SettingKey, settingsSchema, updateSettings, VERSIONED_SETTINGS } from "@/server/services/settings"
 import { freeze } from "@/server/time"
 
 let seq = 0
@@ -107,8 +109,24 @@ export function makeCalendar(
   return cal
 }
 
-export function withSettings(values: Parameters<typeof updateSettings>[0]) {
-  updateSettings(values)
+const versioned = (key: string) => (VERSIONED_SETTINGS as readonly string[]).includes(key)
+
+/** Company settings as if they always applied (figure-changing ones too: base value, no dated version). */
+export function withSettings(values: Parameters<typeof updateSettings>[0], opts: { validFrom?: string } = {}) {
+  if (opts.validFrom) {
+    updateSettings(values, opts)
+    return
+  }
+  updateSettings(Object.fromEntries(Object.entries(values).filter(([key]) => !versioned(key))))
+  for (const [key, value] of Object.entries(values)) {
+    if (!versioned(key)) continue
+    if (!settingsSchema.shape[key as SettingKey].safeParse(value).success) throw new Error(`invalid ${key}`)
+    db.delete(s.settingVersions).where(eq(s.settingVersions.key, key)).run()
+    db.insert(s.settings)
+      .values({ key, value: value as Json })
+      .onConflictDoUpdate({ target: s.settings.key, set: { value: value as Json } })
+      .run()
+  }
 }
 
 export { loadActor }

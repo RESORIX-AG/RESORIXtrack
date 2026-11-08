@@ -60,11 +60,9 @@ export const appToken = publicEndpoint({
     "429": "Too many failed sign-ins, or too many requests from this address; see Retry-After",
   },
   handler: async ({ request, body }) => {
-    const ip = clientIp(request.headers)
-    if (ip) {
-      const wait = signInBuckets.take(ip)
-      if (wait) throw new RateLimited(wait)
-    }
+    // an unknown address shares one bucket rather than going unlimited
+    const wait = signInBuckets.take(clientIp(request.headers) || "unknown")
+    if (wait) throw new RateLimited(wait)
     try {
       return await appSignIn({ ...body, headers: request.headers })
     } catch (err) {

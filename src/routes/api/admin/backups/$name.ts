@@ -1,18 +1,16 @@
 import { openAsBlob } from "node:fs"
 import { createFileRoute } from "@tanstack/react-router"
-import { auth } from "@/server/auth"
 import { AppError } from "@/server/errors"
+import { requestActor } from "@/server/request-actor"
 import { backupPath } from "@/server/services/backups"
-import { loadActor } from "@/server/services/permissions"
 
 /** Download of an encrypted backup (administrators only; the file is delivered as stored, never decrypted). */
 export const Route = createFileRoute("/api/admin/backups/$name")({
   server: {
     handlers: {
       GET: async ({ request, params }) => {
-        const session = await auth.api.getSession({ headers: request.headers })
-        const actor = session ? loadActor(Number(session.user.id)) : null
-        if (!actor?.user.isActive || !actor.isAdmin) return new Response("Not found", { status: 404 })
+        const actor = await requestActor(request.headers)
+        if (!actor?.isAdmin) return new Response("Not found", { status: 404 })
         let file: string
         try {
           file = backupPath(params.name)

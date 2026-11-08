@@ -3,6 +3,7 @@
   "none": "Nessuna segnalazione",
   "rule": {
     "break_min": "Pausa troppo breve",
+    "break_stretch": "Oltre 5½ h senza pausa",
     "daily_rest": "Riposo inferiore a 11 h",
     "day_span": "Giornata oltre 14 h",
     "night_work": "Lavoro notturno",

@@ -11,19 +11,21 @@
  * - The partial unique index `uq_time_entries_open` guarantees one running entry per person even under
  *   concurrent requests; a lost race answers `already_running`.
  * - Clock-ins respect the legal minimum break and daily rest when the setting is on (clock-guards.ts).
+ * - `switch` changes the project while working: the running entry ends and the next one starts at the same
+ *   second, so no break appears and the legal-rest check does not apply. Within the first minute of an entry
+ *   it just relabels that entry.
  */
 import { and, eq, gt, isNotNull, isNull, like, lt, lte, max } from "drizzle-orm"
 import { db, rawSqlite } from "../db"
 import { appState, type TimeEntry, timeEntries, type User } from "../db/schema"
 import { AppError, Conflict, Validation } from "../errors"
-import { dayBoundsUtc, iso, localDateOf, localToday, nowInstant, utcnow, zone } from "../time"
+import { dayBoundsUtc, instantOfMs, iso, localClock, localDateOf, localToday, nowInstant, utcnow } from "../time"
 import { CLOCK_ACTIONS, type OFFLINE_ACTIONS } from "./clock.schemas"
 import { ensureLegalRest } from "./clock-guards"
 import {
   type EntrySource,
   type EntryView,
   entriesBetween,
-  instantOfMs,
   MAX_ENTRY_MS,
   ms,
   parseInstantInput,
@@ -32,6 +34,7 @@ import {
 } from "./entries"
 import { ensureOpenInstants } from "./locks"
 import { type Actor, loadActor } from "./permissions"
+import { type ProjectFields, resolveProjectFields } from "./project-time"
 import { record, snapshot } from "./revisions"
 
 export { CLOCK_ACTIONS, OFFLINE_ACTIONS } from "./clock.schemas"
@@ -76,7 +79,6 @@ export function clockState(user: User): ClockState {
   let first = Number.POSITIVE_INFINITY
   let last = Number.NEGATIVE_INFINITY
   for (const t of entriesBetween(user.id, s, en)) {
-    if (t.kind !== "work") continue // legacy break rows
     const a = Math.max(ms(t.startAt), ms(s))
     const b = Math.min(t.endAt ? ms(t.endAt) : now, ms(en))
     if (b <= a) continue
@@ -131,7 +133,24 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed: time_entries/.test(err.message)
 }
 
-function startNew(actor: Actor, t0: number, source: RevisionSource, note = ""): TimeEntry {
+interface StartOptions {
+  note?: string
+  project?: ProjectFields
+  /** Continues a running entry (switch): no legal-rest check, keeps a scheduled clock-out. */
+  continues?: TimeEntry
+}
+
+/** A clock-in never fails over its project (e.g. deactivated while a device was offline): it starts without. */
+function projectOrNone(actor: Actor, user: User, input: ProjectFields | undefined) {
+  try {
+    return resolveProjectFields(actor, user, input ?? {}, null)
+  } catch (err) {
+    if (!(err instanceof AppError)) throw err
+    return { projectId: null }
+  }
+}
+
+function startNew(actor: Actor, t0: number, source: RevisionSource, opts: StartOptions = {}): TimeEntry {
   const user = actor.user
   let t = t0
   ensureOpenInstants(user, instantOfMs(t))
@@ -163,7 +182,12 @@ function startNew(actor: Actor, t0: number, source: RevisionSource, note = ""): 
         fields: { overlaps: serializeEntry(later) },
       })
   }
-  ensureLegalRest(user, t)
+  if (!opts.continues) ensureLegalRest(user, t)
+  // a switch passes the project it already resolved
+  const project = opts.continues
+    ? { projectId: opts.project?.projectId ?? null }
+    : projectOrNone(actor, user, opts.project)
+  const scheduled = opts.continues?.scheduledEndAt
   const entrySource: EntrySource = source === "web" ? "clock" : source
   const now = utcnow()
   let e: TimeEntry
@@ -175,8 +199,10 @@ function startNew(actor: Actor, t0: number, source: RevisionSource, note = ""): 
         kind: "work",
         startAt: instantOfMs(t),
         endAt: null,
+        scheduledEndAt: scheduled && ms(scheduled) > t ? scheduled : null,
         tz: user.timezone,
-        note: note.trim().slice(0, 500),
+        note: (opts.note ?? "").trim().slice(0, 500),
+        ...project,
         source: entrySource,
         createdById: user.id,
         createdAt: now,
@@ -236,11 +262,6 @@ function close(actor: Actor, e: TimeEntry, t0: number, source: RevisionSource, r
   return t
 }
 
-const localHHMM = (t: number, tz: string) =>
-  Temporal.Instant.fromEpochMilliseconds(t).toZonedDateTimeISO(zone(tz)).toPlainTime().toString({
-    smallestUnit: "minute",
-  })
-
 /** "Clock out later": the entry stays open and `closeDueScheduled` closes it at `t0` (whole seconds). */
 function schedule(actor: Actor, e: TimeEntry, t0: number, source: RevisionSource): void {
   const t = Math.floor(t0 / 1000) * 1000
@@ -264,7 +285,7 @@ function schedule(actor: Actor, e: TimeEntry, t0: number, source: RevisionSource
     actor,
     subjectUserId: actor.id,
     before,
-    reason: `clock-out scheduled for ${localHHMM(t, actor.user.timezone)}`,
+    reason: `clock-out scheduled for ${localClock(t, actor.user.timezone)}`,
     source,
   })
 }
@@ -321,7 +342,7 @@ export function closeDueScheduled(userId?: number): number {
   return closed
 }
 
-export interface ClockOptions {
+export interface ClockOptions extends ProjectFields {
   /** ISO instant, or local wall-clock time in the person's timezone. */
   at?: string | null
   /** The time was chosen by hand: the entry is marked as manual. */
@@ -340,8 +361,10 @@ export function clockAction(actor: Actor, action: ClockAction, opts: ClockOption
   const source: RevisionSource = opts.custom && at ? "manual" : (opts.source ?? "web")
   if (action === "unschedule") {
     if (current?.scheduledEndAt) unschedule(actor, current, source)
-  } else if (action === "start") {
-    if (!current) startNew(actor, clockTime(at, undefined), source, opts.note ?? "")
+  } else if (action === "start" || (action === "switch" && !current)) {
+    if (!current) startNew(actor, clockTime(at, undefined), source, { note: opts.note, project: opts })
+  } else if (action === "switch" && current) {
+    switchProject(actor, current, clockTime(at, current), source, opts)
   } else if (current) {
     if (at && ms(at) > nowInstant().epochMilliseconds + FUTURE_TOLERANCE_MS) schedule(actor, current, ms(at), source)
     else close(actor, current, clockTime(at, current), source)
@@ -349,12 +372,49 @@ export function clockAction(actor: Actor, action: ClockAction, opts: ClockOption
   return clockState(user)
 }
 
-/** Close a running entry now (used when an account is deactivated). */
+const RELABEL_MS = 60_000
+
+/** Carry on with another project: close the running entry at `t` and start the next one at the same time. */
+function switchProject(actor: Actor, current: TimeEntry, t: number, source: RevisionSource, opts: ProjectFields): void {
+  const next = resolveProjectFields(actor, actor.user, opts, current)
+  if (next.projectId === current.projectId) return
+  if (t - ms(current.startAt) < RELABEL_MS) {
+    const before = snapshot("time_entry", current)
+    const updated = db
+      .update(timeEntries)
+      .set({ ...next, updatedAt: utcnow() })
+      .where(eq(timeEntries.id, current.id))
+      .returning()
+      .get()
+    record({
+      entity: "time_entry",
+      row: updated,
+      action: "update",
+      actor,
+      subjectUserId: actor.id,
+      before,
+      reason: "clock (project switched)",
+      source,
+    })
+    return
+  }
+  const end = close(actor, current, t, source, "clock (project switched)")
+  // a forgotten clock-out was capped at 24 h: the new entry starts at the switch, not back then
+  startNew(actor, Math.max(end, t), source, { project: next, continues: current })
+}
+
+/**
+ * Close a running entry now (reporting sick, deactivation): at a scheduled clock-out already due, never after
+ * the 24 h limit, so a forgotten clock-out is not credited for days.
+ */
 export function stopRunning(user: User, actor: Actor | null, reason = ""): TimeEntry | null {
   const e = openEntry(user.id)
   if (!e) return null
   const before = snapshot("time_entry", e)
-  const end = Math.max(Math.floor(nowInstant().epochMilliseconds / 1000) * 1000, ms(e.startAt) + 1000)
+  const start = ms(e.startAt)
+  let end = Math.floor(nowInstant().epochMilliseconds / 1000) * 1000
+  if (e.scheduledEndAt && ms(e.scheduledEndAt) < end) end = ms(e.scheduledEndAt)
+  end = Math.min(Math.max(end, start + 1000), start + MAX_ENTRY_MS)
   const updated = db
     .update(timeEntries)
     .set({ endAt: instantOfMs(end), scheduledEndAt: null, updatedAt: utcnow() })
@@ -367,7 +427,7 @@ export function stopRunning(user: User, actor: Actor | null, reason = ""): TimeE
 
 // ------------------------------------------------------------------ offline sync
 
-export interface OfflineAction {
+export interface OfflineAction extends ProjectFields {
   /** Client-generated id of the queued action (uuid). */
   id: string
   action: OfflineClockAction
@@ -403,7 +463,14 @@ export function syncOffline(actor: Actor, actions: OfflineAction[]): { results: 
     }
     let result: OfflineResult
     try {
-      rawSqlite().transaction(() => clockAction(actor, a.action, { at: a.at, note: a.note, source: "offline" }))()
+      rawSqlite().transaction(() =>
+        clockAction(actor, a.action, {
+          at: a.at,
+          note: a.note,
+          projectId: a.projectId,
+          source: "offline",
+        }),
+      )()
       result = { id: a.id, status: "applied" }
     } catch (err) {
       if (!(err instanceof AppError)) throw err

@@ -73,7 +73,6 @@
     "first_start": "Début",
     "last_end": "Fin",
     "edited": "Modifié",
-    "worklog": "Journal de travail",
     "name": "Nom",
     "team": "Équipe",
     "taken": "Pris",
@@ -120,7 +119,6 @@
     "people_one": "{count} personne",
     "people_other": "{count} personnes",
     "no_project": "Sans projet",
-    "customer": "Client",
     "entry_id": "ID",
     "email": "E-mail",
     "kind": "Type",
@@ -156,7 +154,8 @@
     "supplement_percent": "Majoration %",
     "time_credit": "Crédit de temps",
     "payroll": "Salaire",
-    "supplement_note": "Majoration dimanche/férié {percent} %"
+    "supplement_note": "Majoration dimanche/férié {percent} %",
+    "project_time": "Projets"
   },
   "tab": {
     "timesheet": "Relevé",
@@ -181,7 +180,6 @@
   "all_projects": "Tous les projets",
   "project": "Projet",
   "people": "Personnes",
-  "customer": "Client",
   "no_project": "Sans projet",
   "no_logs": "Rien de saisi sur cette période.",
   "project_no_hours": "Aucune heure sur ce projet pour cette période.",

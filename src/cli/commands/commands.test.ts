@@ -126,7 +126,7 @@ describe("rt decrypt-backup", () => {
     expect(existsSync(path.join(dir, "out2"))).toBe(false)
   })
 
-  it("decrypts a v1 archive into a layout import-v1 reads", async () => {
+  it("writes only safe names", async () => {
     const zip = zipSync({
       "resorixtrack.db": strToU8("SQLite format 3\0"),
       "attachments/0123456789abcdef0123456789abcdef": strToU8("%PDF-"),
@@ -138,11 +138,10 @@ describe("rt decrypt-backup", () => {
     mkdirSync(env.backupsDir)
     const file = path.join(env.backupsDir, "resorixtrack-20260101-020000-auto.zip.enc")
     writeFileSync(file, await encryptBuffer(zip, env.backupPassword))
-    const target = path.join(dir, "v1")
+    const target = path.join(dir, "old")
     expect(await decryptBackup.run([file, "-o", target])).toBe(0)
     expect(existsSync(path.join(target, "attachments", "0123456789abcdef0123456789abcdef"))).toBe(true)
     expect(existsSync(path.join(dir, "evil"))).toBe(false)
-    expect(out.join("\n")).toContain(`rt import-v1 --data ${target}`)
     expect(out.join("\n")).toContain("skipped unsafe names: ../evil")
   })
 })

@@ -10,7 +10,8 @@ import { localeSchema } from "@/lib/locales"
 import { auth, withSignInReason } from "@/server/auth"
 import { env } from "@/server/env"
 import { errors } from "@/server/middleware"
-import { holidayPresets } from "@/server/services/holiday-calendars"
+import { presetDays } from "@/server/services/holiday-calendars.schemas"
+import { holidayPresets } from "@/server/services/holiday-presets"
 import { acceptInvite, inviteInfo } from "@/server/services/invites"
 import { mailConfigured } from "@/server/services/mail"
 import { oidcConfig } from "@/server/services/oidc"
@@ -68,6 +69,7 @@ export const setupSchema = z.object({
   fulltimeWeeklyMinutes: z.number().int().min(60).max(6000),
   defaultVacationDays: z.number().min(0).max(366),
   holidayPreset: z.string().max(40).nullable().optional(),
+  holidayPresetDays: presetDays.optional(),
   adminName: z.string().trim().min(1).max(120),
   adminEmail: z.email().max(254),
   adminPassword: z.string().min(1).max(256),

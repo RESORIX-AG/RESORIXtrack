@@ -28,5 +28,7 @@
   "custom_time": "Other time",
   "scheduled": "Clocks out automatically at {time}",
   "scheduled_short": "until {time}",
-  "cancel_scheduled": "Cancel"
+  "cancel_scheduled": "Cancel",
+  "project": "Project",
+  "next_project": "Clock in on"
 }

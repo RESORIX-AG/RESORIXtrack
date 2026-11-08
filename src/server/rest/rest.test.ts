@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import { lockMonth, makeAbsenceRow, makeEntry, makeLead, makeOrg, makeUser, withSettings } from "@/test/factories"
 import { auth } from "../auth"
 import { db } from "../db"
-import { absenceTypes, apikey, loginAttempts, session, timeEntries, users } from "../db/schema"
+import { absenceTypes, apikey, loginAttempts, passkey, session, timeEntries, users } from "../db/schema"
 import { env } from "../env"
 import { breakGlassAllowed, grantBreakGlass } from "../services/break-glass"
 import { setPassword } from "../services/user-auth"
@@ -456,7 +456,7 @@ function rawSecret(totpURI: string): string {
 
 describe("app sign-in (POST /auth/token)", () => {
   const PW = "correct horse battery"
-  const UA = { "user-agent": "vitest desktop", "x-real-ip": "10.0.0.7" }
+  const UA = { "user-agent": "vitest desktop", "x-resorixtrack-peer": "10.0.0.7" }
   const signIn = (body: Record<string, unknown>, headers: Record<string, string> = UA) =>
     call(null, "POST", "/auth/token", body, headers)
 
@@ -586,6 +586,23 @@ describe("app sign-in (POST /auth/token)", () => {
     expect((await signIn({ email: org.anna.email, password: PW, name: "x" })).status).toBe(201)
   })
 
+  it("never issues a key for a password alone while two-factor is required, passkey or not", async () => {
+    db.insert(passkey)
+      .values({
+        userId: org.anna.id,
+        publicKey: "k",
+        credentialID: "c",
+        counter: 0,
+        deviceType: "singleDevice",
+        backedUp: false,
+      })
+      .run()
+    withSettings({ mfa_required_for_all: true })
+    const r = await signIn({ email: org.anna.email, password: PW, name: "x" })
+    expect(r.status).toBe(403)
+    expect(r.json.error.code).toBe("mfa_required")
+  })
+
   it("throttles after repeated failures like the web sign-in, and floods per address", async () => {
     for (let i = 0; i < 5; i++) {
       // sequential on purpose: the throttle counts the earlier failures
@@ -600,9 +617,32 @@ describe("app sign-in (POST /auth/token)", () => {
     while (signInBuckets.take("10.0.0.99") === 0) {
       // drain the bucket of another address
     }
-    const flood = await signIn({ email: org.ben.email, password: PW, name: "x" }, { "x-real-ip": "10.0.0.99" })
+    const flood = await signIn(
+      { email: org.ben.email, password: PW, name: "x" },
+      { "x-resorixtrack-peer": "10.0.0.99" },
+    )
     expect(flood.status).toBe(429)
-    const other = await signIn({ email: org.ben.email, password: "wrong", name: "x" }, { "x-real-ip": "10.0.0.98" })
+    const other = await signIn(
+      { email: org.ben.email, password: "wrong", name: "x" },
+      { "x-resorixtrack-peer": "10.0.0.98" },
+    )
     expect(other.status).toBe(401)
+  })
+})
+
+describe("API keys and two-factor", () => {
+  it("stop working while the company requires two-factor that the owner has not set up", async () => {
+    const key = await keyFor(org.anna.id)
+    expect((await call(key, "GET", "/me")).status).toBe(200)
+    withSettings({ mfa_required_for_all: true })
+    const r = await call(key, "GET", "/me")
+    expect(r.status).toBe(403)
+    expect(r.json.error.code).toBe("mfa_required")
+  })
+
+  it("refuses a key without an expiry date (the app never issues one)", async () => {
+    const key = await keyFor(org.anna.id)
+    db.update(apikey).set({ expiresAt: null }).run()
+    expect((await call(key, "GET", "/me")).status).toBe(401)
   })
 })

@@ -1,27 +1,29 @@
 import { queryOptions } from "@tanstack/react-query"
 import { createServerFn } from "@tanstack/react-start"
-import { and, asc, eq } from "drizzle-orm"
+import { asc } from "drizzle-orm"
 import { z } from "zod"
+import { passwordMatches } from "@/features/profile/server"
 import { localeSchema } from "@/lib/locales"
 import { db } from "@/server/db"
-import { account, holidayCalendars, teams, users } from "@/server/db/schema"
+import { holidayCalendars, teams, users } from "@/server/db/schema"
 import { Validation } from "@/server/errors"
 import { authed, tx } from "@/server/middleware"
-import { hashPassword, verifyPassword } from "@/server/password"
+import { hashPassword } from "@/server/password"
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/server/password-policy"
 import { sendInvite } from "@/server/services/invites"
 import { withOutbox } from "@/server/services/outbox"
-import { type Actor, requireAdmin, requireHr } from "@/server/services/permissions"
+import { type Actor, getUserOr404, requireAdmin, requireHr } from "@/server/services/permissions"
 import { exportPersonalData } from "@/server/services/privacy"
 import { createSchedule, deleteSchedule, updateSchedule } from "@/server/services/schedules"
 import { getAllSettings } from "@/server/services/settings"
-import { validatePasswordShape } from "@/server/services/user-auth"
+import { checkNewPassword, hasPassword } from "@/server/services/user-auth"
 import {
   anonymizeUser,
   createUser,
   ensureInvitable,
   getUserDetail,
   listUsers,
+  rehire,
   removePasskeys,
   resetTwoFactor,
   setActive,
@@ -32,8 +34,10 @@ import {
 } from "@/server/services/users"
 import { allTimezones } from "@/server/time"
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const day = z.iso.date()
 const id = z.number().int().positive()
+/** Empty for administrators without a password; `confirmOwnPassword` rejects it for everyone else. */
+const adminPassword = z.string().max(MAX_PASSWORD_LENGTH)
 
 const profileShape = {
   name: z.string().max(120),
@@ -53,17 +57,17 @@ const profileShape = {
   argExempt: z.boolean().optional(),
   regularNightWork: z.boolean().optional(),
   birthDate: day.nullable(),
+  termsFrom: day.nullable().optional(),
 }
 
-/** Step-up check: the administrator confirms with their own password before sensitive actions. */
+/**
+ * Step-up check: the administrator confirms with their own password before sensitive actions.
+ * Administrators who sign in through single sign-on only have no password to confirm (as for API keys).
+ */
 async function confirmOwnPassword(actor: Actor, password: string) {
   requireAdmin(actor)
-  const row = db
-    .select({ p: account.password })
-    .from(account)
-    .where(and(eq(account.userId, actor.id), eq(account.providerId, "credential")))
-    .get()
-  if (!row?.p || !(await verifyPassword({ hash: row.p, password }))) {
+  if (!hasPassword(actor.id)) return
+  if (!password || !(await passwordMatches(actor.id, password))) {
     throw new Validation("Your password is not correct", {
       code: "invalid_admin_password",
       fields: { adminPassword: "invalid" },
@@ -86,7 +90,10 @@ export const fetchUserHistory = createServerFn({ method: "GET" })
   .validator(z.object({ id }))
   .handler(({ data, context: { actor } }) => userHistory(actor, data.id))
 
-/** Choices for the people forms: teams, calendars, timezones and company defaults. */
+/**
+ * Choices for the people forms: teams, calendars, timezones and company defaults. `stepUpPassword`: whether
+ * sensitive actions ask for the administrator's own password (single sign-on only accounts have none).
+ */
 export const fetchUserRefs = createServerFn({ method: "GET" })
   .middleware([authed])
   .handler(({ context: { actor } }) => {
@@ -118,6 +125,7 @@ export const fetchUserRefs = createServerFn({ method: "GET" })
         retentionYears: s.retention_years,
       },
       minPasswordLength: MIN_PASSWORD_LENGTH,
+      stepUpPassword: hasPassword(actor.id),
     }
   })
 
@@ -156,6 +164,14 @@ export const updateUserFn = createServerFn({ method: "POST" })
     return { ok: true }
   })
 
+export const rehireFn = createServerFn({ method: "POST" })
+  .middleware([authed])
+  .validator(z.object({ id, start: day }))
+  .handler(({ data, context: { actor } }) => {
+    tx(() => rehire(actor, data.id, data.start))
+    return { ok: true }
+  })
+
 export const setActiveFn = createServerFn({ method: "POST" })
   .middleware([authed])
   .validator(z.object({ id, active: z.boolean() }))
@@ -179,13 +195,13 @@ export const setPasswordFn = createServerFn({ method: "POST" })
     z.object({
       id,
       password: z.string().min(1).max(MAX_PASSWORD_LENGTH),
-      adminPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+      adminPassword,
       notify: z.boolean(),
     }),
   )
   .handler(async ({ data, context: { actor } }) => {
     await confirmOwnPassword(actor, data.adminPassword)
-    validatePasswordShape(data.password)
+    await checkNewPassword(data.password, getUserOr404(data.id).email)
     const hash = await hashPassword(data.password)
     withOutbox(() => tx(() => setPasswordByAdmin(actor, data.id, hash, { notify: data.notify })))
     return { ok: true }
@@ -193,7 +209,7 @@ export const setPasswordFn = createServerFn({ method: "POST" })
 
 export const resetMfaFn = createServerFn({ method: "POST" })
   .middleware([authed])
-  .validator(z.object({ id, adminPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH) }))
+  .validator(z.object({ id, adminPassword }))
   .handler(async ({ data, context: { actor } }) => {
     await confirmOwnPassword(actor, data.adminPassword)
     withOutbox(() => tx(() => resetTwoFactor(actor, data.id)))
@@ -202,7 +218,7 @@ export const resetMfaFn = createServerFn({ method: "POST" })
 
 export const removePasskeysFn = createServerFn({ method: "POST" })
   .middleware([authed])
-  .validator(z.object({ id, adminPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH) }))
+  .validator(z.object({ id, adminPassword }))
   .handler(async ({ data, context: { actor } }) => {
     await confirmOwnPassword(actor, data.adminPassword)
     return { removed: tx(() => removePasskeys(actor, data.id)) }
@@ -210,7 +226,7 @@ export const removePasskeysFn = createServerFn({ method: "POST" })
 
 export const anonymizeFn = createServerFn({ method: "POST" })
   .middleware([authed])
-  .validator(z.object({ id, adminPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH) }))
+  .validator(z.object({ id, adminPassword }))
   .handler(async ({ data, context: { actor } }) => {
     await confirmOwnPassword(actor, data.adminPassword)
     return tx(() => anonymizeUser(actor, data.id))

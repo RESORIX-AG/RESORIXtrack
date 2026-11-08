@@ -18,7 +18,8 @@ personal data · daily and weekly working time actually worked incl. compensator
 start and end · breaks of 30 minutes or more with start and end · weekly rest and compensatory rest days ·
 night and Sunday work · deviations under permits.
 
-- Time entries store start and end instants (µs, UTC) with the person's timezone; breaks are explicit entries.
+- Time entries store start and end instants (µs, UTC); days are counted in the person's timezone (set by the
+  employer, dated like the other terms below); breaks are the gaps between entries.
 - Nothing is ever hard-deleted inside the retention period: deletes are soft (`is_deleted`), every change is a
   revision (who, when, what, why), signed-off months are sealed.
 - `users.recording_mode`:
@@ -41,7 +42,8 @@ Severity: **violation** (a legal limit was exceeded), **warning** (close to a li
 
 | Rule key | Check | Reference |
 |---|---|---|
-| `break_min` | Day with > 5½ h work needs ≥ 15 min break, > 7 h ≥ 30 min, > 9 h ≥ 60 min (breaks may be split; only breaks ≥ 15 min… count as such – v1 rule: total break minutes). Enforced at clock-in when `break_enforcement` is on: 15 and 30 min in one piece, 60 min may be split into pieces of at least 15 min | ArG Art. 15 |
+| `break_min` | A working day with > 5½ h work needs ≥ 15 min break, > 7 h ≥ 30 min, > 9 h ≥ 60 min. 15 and 30 min count in one piece; 60 min may be split into pieces of at least 15 min. Enforced at clock-in when `break_enforcement` is on | ArG Art. 15, ArGV 1 Art. 18 |
+| `break_stretch` | More than 5½ h of work before or after a break needs a break of its own (pieces of at least 15 min count as breaks) | ArGV 1 Art. 18 |
 | `daily_rest` | ≥ 11 consecutive hours of rest between two working days (once a week down to 8 h if the 2-week average is 11 h → warning, below 8 h → violation). Enforced at clock-in when `break_enforcement` is on | ArG Art. 15a |
 | `day_span` | Day and evening work (incl. breaks) within a span of 14 h | ArG Art. 10 para. 3 |
 | `night_work` | Work between 23:00 and 06:00 (needs a permit; warning so HR can verify) | ArG Art. 16/17 |
@@ -51,14 +53,14 @@ Severity: **violation** (a legal limit was exceeded), **warning** (close to a li
 | `overtime_daily` | More than 2 h Überzeit on one day | ArG Art. 12 para. 2 |
 | `overtime_yearly` | Überzeit per calendar year above 170 h (45-h staff) / 140 h (50-h staff); warning at 80 % | ArG Art. 12 para. 2 |
 | `consecutive_days` | More than 6 consecutive working days (weekly rest day missing) | ArG Art. 18–21 |
-| `vacation_minimum` | Yearly entitlement below 4 weeks (5 weeks until age 20 when `birth_date` is known), pro-rated by pensum | OR 329a |
+| `vacation_minimum` | Yearly entitlement below 4 weeks (5 weeks until age 20 when `birth_date` is known), pro-rated by scheduled working days | OR 329a |
 | `vacation_block` | Informational: no block of ≥ 2 consecutive weeks of vacation planned/taken in the year by 1 October | OR 329c |
 
 Settings:
 - `compliance_enabled` (default true): the company is subject to the ArG. Exempt are e.g. public administrations,
   agriculture and private households (Art. 2 ArG); off runs no checks.
 - Breaks (`break_min`, Art. 15) are a legal minimum and always checked when the ArG applies. The former
-  `break_rules_enabled` setting is retired and ignored (also on import from v1).
+  `break_rules_enabled` setting is retired and ignored.
 - `break_enforcement` (default true): a clock-in is refused until the minimum break for the time worked so far
   today and the daily rest after the previous working day are complete (`409 break_required` / `rest_required`
   with `earliest`, the instant from which clocking in is allowed). Only clock-ins are blocked: a manual entry
@@ -80,7 +82,7 @@ Overtime terms (shown in the UI with these names):
 | Situation | Law | RESORIXtrack |
 |---|---|---|
 | Public holidays | Equal to Sundays: 1 August (federal), up to 8 cantonal days (Art. 20a) | Holiday calendars from Swiss presets; 1 August marked federal |
-| Temporary Sunday/holiday work | 50 % wage supplement, paid as money (Art. 19 para. 3) | `payroll` (default): hours and percentage in the timesheet and balances exports; `time_credit`: the percentage is credited as time (GAV) |
+| Temporary Sunday/holiday work | 50 % wage supplement, paid as money (Art. 19 para. 3) | `payroll` (default): hours and percentage in the timesheet and balances exports; `time_credit`: the percentage of the work in the Sunday and holiday windows is credited as time (GAV) |
 | Regular Sunday work | No ArG supplement (Art. 19 para. 2) | Reported hours only; the percentage applies company-wide, payroll decides |
 | Compensatory rest | ≤ 5 h: equal time off within 4 weeks; > 5 h: 24 h rest day on a working day in the week before or after (Art. 20) | `compensatory_rest` finding |
 | Temporary night work (23:00–06:00) | 25 % wage supplement (Art. 17b para. 1) | Night hours in the exports |
@@ -90,8 +92,10 @@ Overtime terms (shown in the UI with these names):
 - Windows: Sunday work is Saturday 23:00 to Sunday 23:00; holiday work 23:00 the evening before to 23:00 on the holiday
   (half days from 12:00); minutes on a holiday that is a Sunday count once, as holiday work. Night work 23:00 to 06:00.
 - None of this applies to `arg_exempt` people (no time credits); the night credit also needs `compliance_enabled`.
-- Existing installs keep their former surcharge (0 % unless set; a set surcharge stays a time credit); the v1 import
-  keeps v1's value and its time-credit behaviour.
+- Settings that change figures (`compliance_enabled`, permits, surcharge, holiday mode, full-time hours) apply from a
+  date (`setting_versions`), and so do a person's terms (team, holiday calendar, timezone, vacation days, `legal_weekly_max_hours`,
+  `recording_mode`, `arg_exempt`, regular night work; `user_terms_history`). Each day is checked with the values of
+  that day; nothing is ever applied before the last signed-off day (services and database guards).
 
 ## How the rules are applied
 
@@ -101,6 +105,10 @@ Overtime terms (shown in the UI with these names):
 - `weekly_max` is a warning (Überzeit is legal within limits); `overtime_yearly` warns from 80 % of the limit.
 - Sunday work: Saturday 23:00 to Sunday 23:00, 1 August and full-day public holidays.
 - `simplified` recording skips break, rest and day-span checks; `waived` and `arg_exempt` run no checks.
+- Überzeit uses the legal maximum of each week; the yearly limit the one at the end of the year.
+- A sick day after part of the day's work credits only what the schedule still lacks, never more than the day.
+- Entitlement: vacation days per year (full-time, 5-day week) × scheduled days per week / 5 × employed share of the
+  year, rounded up to the next half day.
 - Minimum vacation: 4 weeks × scheduled days per week × employed share of the year; 5 weeks up to and including the
   year the person turns 20. `vacation_block` (info) is checked from 1 October: a run of 14 days or more of vacation and
   free days.
@@ -118,7 +126,9 @@ Overtime terms (shown in the UI with these names):
 - **Erasure**: anonymisation of former employees after the retention period (see above): name, email and personal
   fields are replaced, also in the person's own change-log snapshots (the only permitted change to the log); sessions,
   credentials, passkeys, API keys, notifications, sign-in log and documents are deleted. Time records stay, without
-  identity, as long as the employer must keep them (ArGV 1 Art. 73).
+  identity, as long as the employer must keep them (ArGV 1 Art. 73). Free-text notes on entries and absences stay
+  with them, and sealed sign-off snapshots keep the name they were sealed with (never shown); review notes before
+  anonymising if they may name the person.
 - **Information** (Art. 19): a privacy notice page (`/privacy`, editable text in Settings) linked from the
   sign-in page and the profile.
 - **Security** (Art. 8): Argon2id, 2FA (optional or enforced), encrypted backups, server-side sessions, CSP,

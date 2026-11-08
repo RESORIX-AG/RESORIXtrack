@@ -37,7 +37,7 @@ export function CustomTimeButton({
   const [time, setTime] = useState("")
   const [nowMin, setNowMin] = useState(0)
   const [error, setError] = useState(false)
-  const dir = state === "idle" ? "in" : "out"
+  const dir = state === "working" ? "out" : "in"
   const label = dir === "in" ? t("clock.custom_time_in") : t("clock.custom_time_out")
   const later = dir === "out" && time !== "" && hhmmToMin(time) > nowMin + LATER_AFTER_MIN
   const submitLabel = dir === "in" ? t("clock.start") : later ? t("clock.stop_later") : t("clock.stop")

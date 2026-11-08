@@ -1,6 +1,6 @@
 /**
  * Home page: greeting, the clock card, today/week/balance/vacation, this week's chart, upcoming absences,
- * labour-law hints and the work-log reminder (each only when there is something to show).
+ * labour-law hints and the missing-project reminder (each only when there is something to show).
  */
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -16,7 +16,7 @@ import { fmtDayLong } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import { useBootstrap, useMe } from "@/lib/session"
 import { HeroClock } from "./hero-clock"
-import { ComplianceHints, StatTiles, UpcomingCard, WeekCard, WorklogReminder } from "./sections"
+import { ComplianceHints, ProjectReminder, StatTiles, UpcomingCard, WeekCard } from "./sections"
 
 // owned by the team package (route may not exist yet in every build)
 const APPROVALS: string = "/team/approvals"
@@ -55,7 +55,7 @@ export function Dashboard() {
         <StatTiles overview={overview} clock={clock} className="2xl:grid-cols-2" />
       </div>
       <ComplianceHints today={overview.today.date} />
-      <WorklogReminder day={overview.worklogMissingDay} />
+      <ProjectReminder day={overview.projectMissingDay} />
       <div className="grid gap-4 lg:grid-cols-3">
         <WeekCard overview={overview} />
         <UpcomingCard userId={me.id} today={overview.today.date} />

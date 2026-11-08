@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useId, useState } from "react"
+import { HolidayPresetPicker, type PresetChoice } from "@/components/app/holiday-preset-picker"
 import { Button } from "@/components/ui/button"
-import { Combobox } from "@/components/ui/combobox"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,20 +21,28 @@ export function ImportSheet({
   year: number
   onClose: () => void
 }) {
-  const impRegionId = useId()
   const impReplaceId = useId()
   const impYearId = useId()
   const { t, locale } = useI18n()
   const { data: catalog } = useQuery(holidayCatalogQuery(locale))
   const presets = catalog?.presets ?? []
-  // the calendar's own preset is preselected
-  const [preset, setPreset] = useState<string | null>(cal.regionCode || null)
+  // the calendar's own preset and ticked days are preselected
+  const [choice, setChoice] = useState<PresetChoice>({
+    key: cal.hasPreset ? cal.regionCode : null,
+    days: cal.hasPreset ? cal.presetDays : [],
+  })
   const [year, setYear] = useState(initialYear)
   const [replace, setReplace] = useState(false)
-  const run = useAction(() => importHolidaysFn({ data: { calendarId: cal.id, preset: preset ?? "", year, replace } }), {
-    success: (r) => t("admin.holidays.imported", { added: r.added, skipped: r.skipped }),
-    onSuccess: onClose,
-  })
+  const run = useAction(
+    () =>
+      importHolidaysFn({
+        data: { calendarId: cal.id, preset: choice.key ?? "", presetDays: choice.days, year, replace },
+      }),
+    {
+      success: (r) => t("admin.holidays.imported", { added: r.added, skipped: r.skipped }),
+      onSuccess: onClose,
+    },
+  )
   return (
     <EditorSheet
       open
@@ -45,7 +53,7 @@ export function ImportSheet({
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => run.mutate(undefined)} disabled={run.isPending || !catalog || !preset}>
+          <Button onClick={() => run.mutate(undefined)} disabled={run.isPending || !catalog || !choice.key}>
             {run.isPending ? <Spinner data-icon="inline-start" /> : null}
             {t("admin.holidays.import")}
           </Button>
@@ -53,19 +61,7 @@ export function ImportSheet({
       }
     >
       <div className="flex flex-col gap-5">
-        <Field>
-          <FieldLabel htmlFor={impRegionId}>{t("admin.holidays.canton")}</FieldLabel>
-          <Combobox
-            id={impRegionId}
-            value={presets.some((p) => p.key === preset) ? preset : null}
-            onChange={setPreset}
-            options={presets.map((p) => ({
-              value: p.key,
-              label: p.label,
-              hint: p.key.startsWith("CH-") ? p.key : undefined,
-            }))}
-          />
-        </Field>
+        <HolidayPresetPicker presets={presets} value={choice} onChange={setChoice} label={t("admin.holidays.canton")} />
         <Field>
           <FieldLabel htmlFor={impYearId}>{t("common.year")}</FieldLabel>
           <Input

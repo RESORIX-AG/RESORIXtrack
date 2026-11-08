@@ -1,8 +1,8 @@
 /**
  * ⌘K / Ctrl+K command palette: jump to any page, run frequent actions, find people, projects and teams.
  * Pages come from the navigation model (so permissions are identical), records from the server
- * (`searchFn`, permission-filtered). The dialog is its own chunk: it loads on hover/focus of the search
- * button or with the first open.
+ * (`searchFn`, permission-filtered). The dialog is its own chunk: it loads when the page is idle, on
+ * hover/focus of the search button, or with the first open.
  */
 import { Search } from "lucide-react"
 import { lazy, Suspense, useEffect, useEffectEvent, useState } from "react"
@@ -32,7 +32,14 @@ export function CommandPalette() {
   })
   useEffect(() => {
     window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    // loaded once the page is idle, so ⌘K opens at once and no keystroke typed right after it is lost
+    const hasIdle = "requestIdleCallback" in window
+    const id = hasIdle ? requestIdleCallback(prefetch) : window.setTimeout(prefetch, 2000)
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      if (hasIdle) cancelIdleCallback(id)
+      else clearTimeout(id)
+    }
   }, [])
 
   return (

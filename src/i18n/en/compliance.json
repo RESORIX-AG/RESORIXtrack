@@ -3,6 +3,7 @@
   "none": "No findings",
   "rule": {
     "break_min": "Break too short",
+    "break_stretch": "Over 5½ h without a break",
     "daily_rest": "Rest under 11 h",
     "day_span": "Day over 14 h",
     "night_work": "Night work",

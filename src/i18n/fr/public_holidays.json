@@ -1,6 +1,6 @@
 {
   "title": "Jours fériés",
-  "sub": "Les jours fériés qui s'appliquent à vous. Vos jours de travail fériés réduisent vos heures dues; vous ne pouvez pas les modifier.",
+  "sub": "Les jours fériés qui s'appliquent à vous. Vos jours de travail fériés réduisent vos heures dues.",
   "manage": "Gérer les calendriers",
   "source_user": "attribué à vous personnellement",
   "source_team": "calendrier de votre équipe ({team})",

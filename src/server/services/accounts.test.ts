@@ -25,6 +25,7 @@ import {
   countAbsenceDays,
   createAdjustment,
   deleteAdjustment,
+  firstAccountYear,
   setEntitlement,
   summarize,
   timeBalance,
@@ -34,6 +35,7 @@ import {
 } from "./accounts"
 import { listNotifications } from "./notifications"
 import { DEFAULTS, type Settings } from "./settings"
+import { buildTimeline } from "./timeline"
 
 const TZ = "Europe/Zurich"
 const MON = "2026-11-02"
@@ -70,7 +72,15 @@ const COMP = {
 } as AbsenceType
 
 const fakeUser = (o: Partial<User> = {}) =>
-  ({ id: 1, timezone: TZ, employmentStart: "2026-01-01", employmentEnd: null, vacationDaysPerYear: 25, ...o }) as User
+  ({
+    id: 1,
+    timezone: TZ,
+    employmentStart: "2026-01-01",
+    employmentEnd: null,
+    vacationDaysPerYear: 25,
+    recordingMode: "full",
+    ...o,
+  }) as User
 
 function sched(o: { validFrom?: string; perDay?: number; pensum?: number; days?: number[] } = {}): WorkSchedule {
   const days = o.days ?? [0, 1, 2, 3, 4]
@@ -92,11 +102,19 @@ function sched(o: { validFrom?: string; perDay?: number; pensum?: number; days?:
 }
 
 let eid = 0
-function entry(day: string, start: string, end: string | null, kind: "work" | "break" = "work", tz = TZ): ContextEntry {
+const NO_PROJECT = { projectId: null }
+function entry(
+  day: string,
+  start: string,
+  end: string | null,
+  kind: "work" | "break" = "work",
+  tz = TZ,
+  project: Pick<ContextEntry, "projectId"> = NO_PROJECT,
+): ContextEntry {
   const s = at(day, start, tz)
   let e = end ? at(day, end, tz) : null
   if (e && e <= s) e = at(plus(day, 1), end!, tz)
-  return { id: ++eid, kind, startAt: s, endAt: e, source: "clock" }
+  return { id: ++eid, kind, startAt: s, endAt: e, source: "clock", ...project }
 }
 
 function absence(
@@ -134,8 +152,10 @@ function ctx(
   } = {},
 ): AccountContext {
   const now = Temporal.Instant.from(o.now ?? NOW)
+  const user = o.user ?? fakeUser()
+  const settings = { ...DEFAULTS, ...o.settings }
   return {
-    user: o.user ?? fakeUser(),
+    user,
     start,
     end,
     tz: TZ,
@@ -144,10 +164,12 @@ function ctx(
     absences: o.absences ?? [],
     types: new Map([VACATION, SICK, COMP].map((t) => [t.id, t])),
     entries: o.entries ?? [],
-    settings: { ...DEFAULTS, ...o.settings },
+    settings,
+    settingsAt: () => settings,
+    settingChanges: [],
+    timeline: buildTimeline(user),
     nowMs: now.epochMilliseconds,
     today: now.toZonedDateTimeISO(TZ).toPlainDate().toString(),
-    worklogMinutes: new Map(),
   }
 }
 
@@ -271,10 +293,10 @@ describe("Sunday, holiday and night work", () => {
     const days = computeDaysFrom(
       ctx(SAT, SUN, { entries: [entry(SAT, "22:00", "02:00"), entry(SUN, "22:00", "23:30")], settings: credit }),
     )
-    expect(days[0]).toMatchObject({ sundayWorkMin: 60, nightWorkMin: 60, surchargeMin: 0 })
-    expect(days[1]).toMatchObject({ sundayWorkMin: 180, nightWorkMin: 150, surchargeMin: 0 })
-    // Sunday work is reported for payroll, never credited as time (v1 credited public holidays only)
-    expect(summarize(days)).toMatchObject({ sundayWorkMin: 240, nightWorkMin: 210, surchargeMin: 0 })
+    expect(days[0]).toMatchObject({ sundayWorkMin: 60, nightWorkMin: 60, surchargeMin: 30 })
+    expect(days[1]).toMatchObject({ sundayWorkMin: 180, nightWorkMin: 150, surchargeMin: 90 })
+    // in time-credit mode the surcharge applies to the Sunday window too
+    expect(summarize(days)).toMatchObject({ sundayWorkMin: 240, nightWorkMin: 210, surchargeMin: 120 })
   })
 
   it("counts a holiday on a Sunday once, as holiday work", () => {
@@ -282,7 +304,6 @@ describe("Sunday, holiday and night work", () => {
       ctx(SUN, SUN, { settings: credit, holidays: holiday(1, SUN), entries: [entry(SUN, "09:00", "12:00")] }),
     )
     expect(d).toMatchObject({ sundayWorkMin: 0, holidayWorkMin: 180 })
-    // v1 formula: worked x 50 % x holiday half-days (2) / 2
     expect(d.surchargeMin).toBe(90)
   })
 
@@ -359,6 +380,16 @@ describe("absences", () => {
   })
 })
 
+describe("sick after part of the day", () => {
+  it("credits only what the schedule still lacks", () => {
+    const c = () => ctx(MON, MON, { entries: [entry(MON, "08:00", "10:00")], absences: [absence(MON, MON, SICK)] })
+    expect(one(c())).toMatchObject({ workedMin: 120, absenceCreditMin: 384, targetMin: 120, deltaMin: 0 })
+    // a full day of work and sick: nothing to credit
+    const full = ctx(MON, MON, { entries: [entry(MON, "08:00", "17:00")], absences: [absence(MON, MON, SICK)] })
+    expect(one(full)).toMatchObject({ absenceCreditMin: 0, deltaMin: 36 })
+  })
+})
+
 describe("entries", () => {
   it("splits at midnight, counts running entries until now, separates breaks, warns on short breaks", () => {
     expect(
@@ -383,7 +414,16 @@ describe("entries", () => {
     expect(
       one(
         ctx(spring, spring, {
-          entries: [{ id: 1, kind: "work", startAt: at(spring, "00:00"), endAt: at(spring, "06:00"), source: "clock" }],
+          entries: [
+            {
+              id: 1,
+              kind: "work",
+              startAt: at(spring, "00:00"),
+              endAt: at(spring, "06:00"),
+              source: "clock",
+              ...NO_PROJECT,
+            },
+          ],
         }),
       ).workedMin,
     ).toBe(300)
@@ -391,14 +431,30 @@ describe("entries", () => {
     expect(
       one(
         ctx(fall, fall, {
-          entries: [{ id: 2, kind: "work", startAt: at(fall, "00:00"), endAt: at(fall, "06:00"), source: "clock" }],
+          entries: [
+            {
+              id: 2,
+              kind: "work",
+              startAt: at(fall, "00:00"),
+              endAt: at(fall, "06:00"),
+              source: "clock",
+              ...NO_PROJECT,
+            },
+          ],
         }),
       ).workedMin,
     ).toBe(420)
     const full = one(
       ctx(fall, fall, {
         entries: [
-          { id: 3, kind: "work", startAt: at(fall, "00:00"), endAt: at(plus(fall, 1), "00:00"), source: "clock" },
+          {
+            id: 3,
+            kind: "work",
+            startAt: at(fall, "00:00"),
+            endAt: at(plus(fall, 1), "00:00"),
+            source: "clock",
+            ...NO_PROJECT,
+          },
         ],
       }),
     )
@@ -417,15 +473,27 @@ describe("entries", () => {
     expect(computeDaysFrom(c).map((d) => d.workedMin)).toEqual([30, 0])
   })
 
-  it("work log requirement per day", () => {
-    const c = ctx(MON, MON, {
-      entries: [entry(MON, "08:00", "12:00")],
-      settings: { worklog_mode: "required", worklog_required_percent: 80 },
+  it("project requirement per day", () => {
+    const P = { projectId: 1 }
+    const tagged = entry(MON, "08:00", "10:00", "work", TZ, P)
+    const untagged = entry(MON, "10:00", "12:00")
+    const required = { project_mode: "required" as const }
+    expect(one(ctx(MON, MON, { entries: [tagged, untagged], settings: required }))).toMatchObject({
+      projectMin: 120,
+      projectOk: false,
     })
-    c.worklogMinutes.set(MON, 100)
-    expect(one(c)).toMatchObject({ worklogMin: 100, worklogRequiredMin: 192, worklogOk: false })
-    c.worklogMinutes.set(MON, 192)
-    expect(one(c).worklogOk).toBe(true)
+    expect(one(ctx(MON, MON, { entries: [tagged, untagged] })).projectOk).toBe(true)
+    const other = entry(MON, "10:00", "12:00", "work", TZ, { projectId: 2 })
+    expect(one(ctx(MON, MON, { entries: [tagged, other], settings: required }))).toMatchObject({
+      projectMin: 240,
+      projectOk: true,
+    })
+    // exact: even a minute without a project leaves the day open
+    const minute = entry(MON, "12:00", "12:01")
+    expect(one(ctx(MON, MON, { entries: [tagged, other, minute], settings: required })).projectOk).toBe(false)
+    // today is never flagged
+    const today = ctx(MON, MON, { entries: [untagged], settings: required, now: `${MON}T15:00:00Z` })
+    expect(one(today).projectOk).toBe(true)
   })
 })
 
@@ -503,6 +571,35 @@ describe("accounts with the database", () => {
     expect(accountStart(u)).toBe("2026-01-01")
   })
 
+  it("bookings: none after an as-of date, months before the start and years before the hire still count", () => {
+    const u = setup()
+    const hr = loadActor(makeUser({ capabilities: ["hr"] }).id)
+    const october = timeBalance(u, "2026-10-31").balanceMin
+    createAdjustment(hr, u.id, { account: "time", amount: -600, reason: "Payout", effectiveDate: "2026-11-03" })
+    expect(timeBalance(u, "2026-10-31").balanceMin).toBe(october)
+    expect(timeBalance(u).balanceMin).toBe(timeBalance(u, "2026-11-04").balanceMin)
+
+    const late = makeUser({ employmentStart: "2026-03-15" })
+    makeSchedule(late.id, { validFrom: "2026-03-15" })
+    createAdjustment(hr, late.id, { account: "time", amount: 600, reason: "Opening", effectiveDate: "2026-01-01" })
+    expect(timeStatement(late, 2026).closingMin).toBe(timeBalance(late).balanceMin)
+
+    const hire = makeUser({ employmentStart: "2027-01-01", vacationDaysPerYear: 25 })
+    makeSchedule(hire.id, { validFrom: "2027-01-01" })
+    createAdjustment(hr, hire.id, { account: "vacation", amount: 3, reason: "Carry-over" })
+    expect(vacationAccount(hire, 2027)).toMatchObject({ carriedOver: 3, remaining: 28 })
+  })
+
+  it("first year: the account start, an earlier booking, never before what a lead may see", () => {
+    setup()
+    const hr = loadActor(makeUser({ capabilities: ["hr"] }).id)
+    const u = makeUser({ employmentStart: "2026-03-15" })
+    expect(firstAccountYear(u)).toBe(2026)
+    createAdjustment(hr, u.id, { account: "time", amount: 600, reason: "Opening", effectiveDate: "2025-12-31" })
+    expect(firstAccountYear(u)).toBe(2025)
+    expect(firstAccountYear(u, "2026-06-01")).toBe(2026)
+  })
+
   it("adjustments: permission, reason, notification, revisions, sign-off lock (service and trigger)", () => {
     const u = setup()
     const team = makeTeam()
@@ -575,7 +672,7 @@ describe("accounts with the database", () => {
     expect(revs).toEqual([{ action: "create" }, { action: "delete" }])
   })
 
-  it("vacation account: carry-over, overrides, pending, prorate setting", () => {
+  it("vacation account: carry-over, overrides, pending, working days, rounding up", () => {
     freeze("2026-06-15T10:00:00Z")
     const vac = makeAbsenceType({ key: "vacation", category: "vacation", deductsVacation: true })
     const u = makeUser({ employmentStart: "2025-07-01", vacationDaysPerYear: 25 })
@@ -585,16 +682,17 @@ describe("accounts with the database", () => {
     makeAbsenceRow(u.id, vac.id, "2026-08-03", "2026-08-07")
     makeAbsenceRow(u.id, vac.id, "2026-09-07", "2026-09-07", { status: "pending" })
     const v25 = vacationAccount(u, 2025)
-    expect(v25).toMatchObject({ entitlement: 12.5, taken: 5, remaining: 7.5 })
+    // 25 x 184/365 = 12.6, rounded up to the next half day
+    expect(v25).toMatchObject({ entitlement: 13, taken: 5, remaining: 8 })
     const v26 = vacationAccount(u, 2026)
     expect(v26).toMatchObject({
-      carriedOver: 7.5,
+      carriedOver: 8,
       entitlement: 25,
       taken: 2,
       planned: 5,
       pending: 1,
-      remaining: 25.5,
-      remainingAfterPending: 24.5,
+      remaining: 26,
+      remainingAfterPending: 25,
     })
     const hr = makeUser({ capabilities: ["hr"] })
     setEntitlement(loadActor(hr.id), u.id, 2026, 20, "contract")
@@ -605,8 +703,6 @@ describe("accounts with the database", () => {
 
     const part = makeUser({ employmentStart: "2026-01-01", vacationDaysPerYear: 25 })
     makeSchedule(part.id, { validFrom: "2026-01-01", minutesThu: 0, minutesFri: 0 })
-    expect(vacationAccount(part, 2026).entitlement).toBe(25)
-    withSettings({ vacation_prorate_workdays: true })
     expect(vacationAccount(part, 2026).entitlement).toBe(15)
     expect(workdaysFactor([], "2026-01-01", "2026-01-31")).toBe(1)
   })
@@ -626,7 +722,7 @@ describe("accounts with the database", () => {
     const u = setup()
     const vac = makeAbsenceType({ key: "vacation", deductsVacation: true })
     makeAbsenceRow(u.id, vac.id, "2026-11-03")
-    makeEntry(u.id, at("2026-11-03", "08:00"), null, { source: "clock" })
+    makeEntry(u.id, at("2026-11-03", "08:00"), null, { source: "clock", ...NO_PROJECT })
     const days = computeDays(u, "2026-11-02", "2026-11-05")
     expect(days[1].absences[0]).toMatchObject({ typeKey: "vacation", halves: ["am", "pm"] })
     expect(days[3].running).toBe(true)

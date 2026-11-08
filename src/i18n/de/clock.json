@@ -28,5 +28,7 @@
   "custom_time": "Andere Zeit",
   "scheduled": "Automatisches Ausstempeln um {time}",
   "scheduled_short": "bis {time}",
-  "cancel_scheduled": "Abbrechen"
+  "cancel_scheduled": "Abbrechen",
+  "project": "Projekt",
+  "next_project": "Einstempeln auf"
 }

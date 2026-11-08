@@ -11,17 +11,8 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import Database from "better-sqlite3"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  createDb,
-  DatabaseVersionError,
-  MIGRATIONS_DIR,
-  migrationStatus,
-  openSqlite,
-  rawSqlite,
-  runMigrations,
-} from "@/server/db"
+import { createDb, MIGRATIONS_DIR, migrationStatus, openSqlite, rawSqlite, runMigrations } from "@/server/db"
 import { env } from "@/server/env"
 import { migrateDatabase } from "./migrate"
 
@@ -80,7 +71,7 @@ function settingsAfter(percent: string | null) {
   sqlite.prepare("INSERT INTO holiday_calendars (name, region_code) VALUES ('CH-FR City of Fribourg', 'CH-FR')").run()
   runMigrations(createDb(sqlite))
   const rows = sqlite.prepare("SELECT key, value FROM settings ORDER BY key").all()
-  const cal = sqlite.prepare("SELECT region_code AS r FROM holiday_calendars").get()
+  const cal = sqlite.prepare("SELECT region_code AS r, preset_days AS d FROM holiday_calendars").get()
   sqlite.close()
   return { rows, cal }
 }
@@ -91,13 +82,13 @@ describe("rt migrate", () => {
     olderDatabase(file, true)
     expect(await migrateDatabase({ file, check: true, log })).toBe(1)
     expect(lines.at(-1)).toMatch(
-      /^pending: 0002_passkeys, 0003_guards_v2, 0004_arg_exempt, 0005_regular_night_work, 0006_clock_out_later$/,
+      /^pending: 0002_passkeys, 0003_guards_v2, 0004_arg_exempt, 0005_regular_night_work, 0006_clock_out_later, 0007_canton_presets, 0008_entry_projects, 0009_attachment_guards, 0010_signoff_calendar, 0011_dated_terms, 0012_rehire_guard$/,
     )
     expect(await migrateDatabase({ file, log })).toBe(0)
     const backups = readdirSync(path.join(dir, "backups"))
     expect(backups).toHaveLength(1)
     expect(backups[0]).toMatch(/-premigrate\.zip\.enc$/)
-    expect(lines.some((l) => l.startsWith("applying 5 migration(s)"))).toBe(true)
+    expect(lines.some((l) => l.startsWith("applying 11 migration(s)"))).toBe(true)
     expect(migrationStatus(rawSqlite()).pending).toEqual([])
     // a user exists: no setup code
     expect(lines.join("\n")).not.toContain("first-run setup")
@@ -117,14 +108,18 @@ describe("rt migrate", () => {
     expect(out.slice(at, at + 5).join("\n")).toMatch(/[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}/)
   })
 
-  it("keeps the holiday surcharge of existing installs and the Fribourg preset key", () => {
+  it("keeps the holiday surcharge of existing installs; the City of Fribourg becomes canton FR", () => {
     expect(settingsAfter("25").rows).toEqual([
       { key: "holiday_work_surcharge_mode", value: '"time_credit"' },
       { key: "holiday_work_surcharge_percent", value: "25" },
     ])
     const none = settingsAfter(null)
     expect(none.rows).toEqual([{ key: "holiday_work_surcharge_percent", value: "0" }])
-    expect(none.cal).toEqual({ r: "ch-fr-fribourg" })
+    // same dates as before: the canton's commune days stay ticked
+    expect(none.cal).toEqual({
+      r: "CH-FR",
+      d: '["Corpus Christi","Assumption Day","All Saints\' Day","Immaculate Conception"]',
+    })
   })
 
   it("skips the backup on request", async () => {
@@ -132,20 +127,6 @@ describe("rt migrate", () => {
     olderDatabase(file, true)
     expect(await migrateDatabase({ file, backup: false, log })).toBe(0)
     expect(existsSync(path.join(dir, "backups"))).toBe(false)
-  })
-
-  it("leaves a RESORIXtrack 1.x database byte-identical", async () => {
-    const file = path.join(dir, "v1.db")
-    const v1 = new Database(file)
-    v1.exec("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
-    v1.exec("INSERT INTO alembic_version VALUES ('0007')")
-    v1.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)")
-    v1.close()
-    const before = sha(file)
-    await expect(migrateDatabase({ file, log })).rejects.toThrow(/1\.x database.*rt import-v1 --data/)
-    await expect(migrateDatabase({ file, check: true, log })).rejects.toBeInstanceOf(DatabaseVersionError)
-    expect(sha(file)).toBe(before)
-    expect(readdirSync(dir).sort()).toEqual(["v1.db"])
   })
 
   it("refuses a database migrated by a newer version without changing it", async () => {

@@ -5,6 +5,7 @@
  */
 import { Cron } from "croner"
 import { assertProductionConfig } from "@/server/env"
+import { flushMail } from "@/server/services/mail"
 import { getSetting } from "@/server/services/settings"
 import { beat } from "./heartbeat"
 import { JOBS } from "./jobs"
@@ -29,6 +30,8 @@ if (onceAt >= 0) {
   // one after another, so the jobs' database writes and log lines never interleave
   // react-doctor-disable-next-line react-doctor/async-await-in-loop
   for (const job of JOBS.filter((j) => !names.size || names.has(j.name))) await run(job.name, job.run) // oxlint-disable-line eslint/no-await-in-loop
+  // reminders are queued, not sent: let them go out before exiting
+  await flushMail()
   process.exit(0)
 }
 

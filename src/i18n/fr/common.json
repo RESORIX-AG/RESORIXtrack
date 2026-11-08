@@ -81,5 +81,7 @@
     "hex": "Hex"
   },
   "choose_file": "Choisir un fichier",
-  "remove": "Retirer"
+  "remove": "Retirer",
+  "results": "Résultats",
+  "note_no_personal": "Conservé des années avec les données de temps. Pas de données de santé ni d'autres données personnelles."
 }

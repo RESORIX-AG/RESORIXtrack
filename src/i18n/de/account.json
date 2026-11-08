@@ -1,7 +1,7 @@
 {
   "title": "Zeitkonto",
-  "opening": "Anfangssaldo",
-  "opening_hint": "Übertrag ins {year}",
+  "opening": "Übertrag",
+  "opening_hint": "Saldo Ende {prev}",
   "target_year": "Soll-Stunden",
   "until_yesterday": "Bis gestern",
   "worked_year": "Ist-Stunden",
@@ -15,7 +15,7 @@
   "adjustments": "Korrekturen",
   "balance": "Saldo",
   "vacation": "Ferienkonto",
-  "to_absences": "Abwesenheiten",
+  "to_absences": "Absenzen",
   "time_account": "Zeitkonto",
   "adjustment_list": "Korrekturen",
   "no_adjustments": "Noch keine Korrekturen.",

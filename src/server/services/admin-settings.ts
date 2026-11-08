@@ -30,11 +30,11 @@ import { MAX_LOGO_BYTES } from "./admin-settings.schemas"
 // ------------------------------------------------------------------ settings
 
 export const SETTING_GROUPS = {
-  company: ["company_name", "default_timezone", "default_locale", "default_vacation_days"],
+  company: ["company_name", "default_timezone", "default_locale"],
   time: [
     "fulltime_weekly_minutes",
     "holiday_mode",
-    "vacation_prorate_workdays",
+    "default_vacation_days",
     "lead_can_edit_schedules",
     "lead_can_adjust_balances",
     "reason_required_for_past_edits",
@@ -52,7 +52,7 @@ export const SETTING_GROUPS = {
     "holiday_work_surcharge_mode",
     "retention_years",
   ],
-  worklog: ["worklog_mode", "worklog_required_percent", "worklog_project_required"],
+  projects: ["project_mode"],
   security: ["mfa_required_for_admins", "mfa_required_for_all", "api_tokens_enabled", "login_log_retention_days"],
   privacy: ["privacy_notice"],
 } as const satisfies Record<string, readonly SettingKey[]>
@@ -65,12 +65,12 @@ export function getSettings(actor: Actor): Settings {
   return getAllSettings()
 }
 
-export function saveSettings(actor: Actor, changes: Partial<Settings>): Settings {
+export function saveSettings(actor: Actor, changes: Partial<Settings>, validFrom?: string): Settings {
   requireAdmin(actor)
   const unknown = Object.keys(changes).filter((k) => !EDITABLE.has(k) && !RETIRED_SETTINGS.includes(k))
   if (unknown.length)
     throw new Validation("Unknown setting", { fields: Object.fromEntries(unknown.map((k) => [k, "invalid"])) })
-  return updateSettings(changes)
+  return updateSettings(changes, { validFrom })
 }
 
 // ------------------------------------------------------------------ branding
@@ -116,10 +116,15 @@ export function checkSvg(text: string): void {
   const lower = text.toLowerCase()
   if (!/<svg[\s>]/.test(lower)) throw new Validation("Not an SVG image", { fields: { file: "type" } })
   if (lower.includes("<!doctype") || lower.includes("<!entity")) throw unsafeSvg("DOCTYPE or entities")
-  if (/<\s*(script|foreignobject|iframe|embed|object|audio|video|animate\w*|set|handler|listener)[\s/>]/.test(lower))
+  // any namespace prefix, e.g. <x:script xmlns:x="http://www.w3.org/2000/svg">
+  if (
+    /<\s*([\w.-]+:)?(script|foreignobject|iframe|embed|object|audio|video|animate\w*|set|handler|listener)[\s/>]/.test(
+      lower,
+    )
+  )
     throw unsafeSvg("active element")
   if (/\son[a-z]+\s*=/.test(lower)) throw unsafeSvg("event handler")
-  for (const m of lower.matchAll(/(?:xlink:)?href\s*=\s*["']([^"']*)["']/g)) {
+  for (const m of lower.matchAll(/(?:[\w.-]+:)?href\s*=\s*["']([^"']*)["']/g)) {
     if (!m[1].trim().startsWith("#") && !m[1].trim().startsWith("data:image/")) throw unsafeSvg("external link")
   }
   if (/url\s*\(\s*["']?\s*(?!#)/.test(lower) || lower.includes("@import") || lower.includes("expression("))
@@ -248,6 +253,12 @@ export function updateAbsenceType(actor: Actor, id: number, input: Partial<Absen
   const t = db.select().from(absenceTypes).where(eq(absenceTypes.id, id)).get()
   if (!t) throw new NotFound("Absence type not found")
   validateType(input)
+  // past absences (signed months, team calendar privacy) were counted and shown by these
+  const counting = (["category", "creditsTime", "deductsVacation"] as const).some(
+    (k) => input[k] !== undefined && input[k] !== t[k],
+  )
+  if (counting && db.select({ id: absences.id }).from(absences).where(eq(absences.typeId, t.id)).get())
+    throw new Conflict("This type is in use; create a new type instead", { code: "type_in_use_counting" })
   const next = { ...input, ...(input.label !== undefined ? { label: input.label.trim() } : {}) }
   return serializeAbsenceType(db.update(absenceTypes).set(next).where(eq(absenceTypes.id, t.id)).returning().get())
 }

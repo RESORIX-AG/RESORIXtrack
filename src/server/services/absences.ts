@@ -32,17 +32,20 @@ import { deferMail } from "./outbox"
 import {
   type Actor,
   approversFor,
+  beforeCover,
   canManageUser,
   canViewUser,
   getUserOr404,
+  hrSelfFallback,
   requireView,
+  seesDate,
   visibleUserIds,
 } from "./permissions"
 import { history, record, serializeRevision, snapshot } from "./revisions"
 import { getSetting } from "./settings"
 
 export const ACTIVE_STATES: AbsenceStatus[] = ["pending", "approved"]
-const isActiveState = (s: AbsenceStatus) => s === "pending" || s === "approved"
+export const isActiveState = (s: AbsenceStatus) => s === "pending" || s === "approved"
 
 // ------------------------------------------------------------------ inputs
 
@@ -128,7 +131,14 @@ export function canDecide(actor: Actor, owner: User): boolean {
 }
 
 function canSee(actor: Actor, a: Absence, owner: User): boolean {
+  // a lead covering from a later day sees absences that reach into the cover only
+  if (!seesDate(actor, owner, a.endDate)) return false
   return canViewUser(actor, owner) || (a.status === "pending" && canDecide(actor, owner))
+}
+
+/** A lead covering from a later day changes no absence that starts before it. */
+function ensureInCover(actor: Actor, owner: User, ...starts: string[]): void {
+  for (const d of starts) if (!seesDate(actor, owner, d)) throw beforeCover(actor, owner)
 }
 
 /** The absence if the actor may see it (else NotFound, so ids are not leaked). */
@@ -232,14 +242,16 @@ export function createAbsence(actor: Actor, raw: AbsenceInput, source = "web"): 
   const isSelf = actor.id === owner.id
   if (!isSelf && !canManageUser(actor, owner))
     throw new Forbidden("You can only record absences for members of teams you lead")
-  if (isSelf && !t.employeeCanRequest && !actor.isHr)
+  ensureInCover(actor, owner, input.startDate)
+  const soleHr = hrSelfFallback(actor, owner)
+  if (isSelf && !t.employeeCanRequest && !soleHr)
     throw new Forbidden(`'${t.label}' can only be recorded by your team lead or HR`, { code: "type_not_requestable" })
   const start = input.startDate
   const end = input.endDate ?? start
   const startHalf = input.startHalf
   const endHalf = start === end ? "full" : input.endHalf
   validateHalves(start, end, startHalf, endHalf)
-  if (t.category === "sick" && isSelf && !actor.isHr) checkSelfSick(owner, start, end)
+  if (t.category === "sick" && isSelf && !soleHr) checkSelfSick(owner, start, end)
 
   ensureOpenDates(owner, start, end)
   const span = { startDate: start, endDate: end, startHalf, endHalf }
@@ -248,7 +260,8 @@ export function createAbsence(actor: Actor, raw: AbsenceInput, source = "web"): 
   if (days <= 0)
     throw new Validation("The selected period contains no working days", { fields: { endDate: "no_workdays" } })
 
-  const needsApproval = t.requiresApproval && isSelf && !actor.isHr
+  // nobody else could decide (the only HR person or administrator): recorded directly, as a lead would
+  const needsApproval = t.requiresApproval && isSelf && approversFor(owner).length > 0
   const now = utcnow()
   const a = db
     .insert(absences)
@@ -292,6 +305,7 @@ export function createAbsence(actor: Actor, raw: AbsenceInput, source = "web"): 
 export function updateAbsence(actor: Actor, id: number, raw: AbsencePatch, source = "web"): Absence {
   const patch = absencePatch.parse(raw)
   const { absence: a, owner } = visibleAbsence(actor, id)
+  ensureInCover(actor, owner, a.startDate, patch.startDate ?? a.startDate)
   const t = absenceTypesById().get(a.typeId)!
   const isSelf = actor.id === owner.id
   const manager = canManageUser(actor, owner)
@@ -312,11 +326,18 @@ export function updateAbsence(actor: Actor, id: number, raw: AbsencePatch, sourc
   const startHalf = patch.startHalf ?? a.startHalf
   const endHalf = start === end ? "full" : (patch.endHalf ?? a.endHalf)
   validateHalves(start, end, startHalf, endHalf)
-  if (isSelf && !manager && t.category === "sick" && a.status === "approved") {
+  const ownSickEdit = isSelf && !manager && t.category === "sick" && a.status === "approved"
+  if (ownSickEdit) {
     const maxDays = getSetting("sick_self_report_max_days")
     if (start !== a.startDate) throw new Forbidden("The start of a sick report can only be changed by your team lead")
     if (daysBetween(start, end) + 1 > maxDays)
       throw new Validation(`A sick report can cover at most ${maxDays} days`, { fields: { endDate: "too_long" } })
+    // added days follow the same backdating limit as a new report
+    const backdate = getSetting("sick_self_report_backdate_days")
+    if (end > a.endDate && addDays(a.endDate, 1) < addDays(localToday(owner.timezone), -backdate))
+      throw new Validation(`Sick reports can be backdated by at most ${backdate} days; ask your team lead`, {
+        fields: { endDate: "too_old" },
+      })
   }
   ensureOpenDates(owner, minDay(start, a.startDate), maxDay(end, a.endDate))
   const span = { startDate: start, endDate: end, startHalf, endHalf }
@@ -334,7 +355,16 @@ export function updateAbsence(actor: Actor, id: number, raw: AbsencePatch, sourc
     .returning()
     .get()
   record({ entity: "absence", row: updated, action: "update", actor, subjectUserId: owner.id, before, reason, source })
-  if (!isSelf) {
+  if (ownSickEdit) {
+    for (const approver of approversFor(owner)) {
+      notify(approver.id, "absence_reported", payload(updated, t, { user_id: owner.id, user_name: owner.name, days }))
+      deferMail(
+        recipient(approver),
+        "absence_reported",
+        mailVars(updated, t, { recipient_name: approver.name, requester_name: owner.name, days }),
+      )
+    }
+  } else if (!isSelf) {
     notify(owner.id, "absence_changed", payload(updated, t, { actor_name: actor.user.name, reason }))
     deferMail(
       recipient(owner),
@@ -348,6 +378,7 @@ export function updateAbsence(actor: Actor, id: number, raw: AbsencePatch, sourc
 // ------------------------------------------------------------------ workflow
 
 export function decideAbsence(actor: Actor, id: number, approve: boolean, note = "", source = "web"): Absence {
+  // a request reaching into a deputy's cover is theirs to decide (visibleAbsence checks the end date)
   const { absence: a, owner } = visibleAbsence(actor, id)
   if (a.status !== "pending") throw new Conflict("This request has already been decided", { code: "invalid_state" })
   if (!canDecide(actor, owner)) {
@@ -400,6 +431,7 @@ export function decideAbsence(actor: Actor, id: number, approve: boolean, note =
 
 export function cancelAbsence(actor: Actor, id: number, reason = "", source = "web"): Absence {
   const { absence: a, owner } = visibleAbsence(actor, id)
+  ensureInCover(actor, owner, a.startDate)
   const t = absenceTypesById().get(a.typeId)!
   if (!isActiveState(a.status)) throw new Conflict("This absence is already closed", { code: "invalid_state" })
   if (!canCancel(actor, a, owner, t))
@@ -497,7 +529,12 @@ export function listAbsences(actor: Actor, raw: z.input<typeof listInput>) {
     ids = visibleIds ? members.filter((i) => visibleIds.has(i)) : members
   }
   if (ids && !ids.length) return []
-  return serializeAbsences(actor, absencesInRange(ids, input.from, input.to, input.status))
+  const rows = absencesInRange(ids, input.from, input.to, input.status)
+  const owners = usersById(rows.map((a) => a.userId))
+  return serializeAbsences(
+    actor,
+    rows.filter((a) => seesDate(actor, owners.get(a.userId)!, a.endDate)),
+  )
 }
 
 export function getAbsenceDto(actor: Actor, id: number) {
@@ -529,23 +566,30 @@ export function absencePreview(actor: Actor, raw: z.input<typeof previewInput>) 
   const endHalf = end === input.startDate ? "full" : input.endHalf
   const days = countAbsenceDays(owner, input.startDate, end, input.startHalf, endHalf)
   const t = getAbsenceType(input.type)
-  const vac = vacationAccount(owner, Number(input.startDate.slice(0, 4)))
+  const year = input.startDate.slice(0, 4)
+  const vac = vacationAccount(owner, Number(year), input.excludeId ?? undefined)
+  // days after New Year come from the next year's entitlement
+  const span = { startDate: input.startDate, endDate: end, startHalf: input.startHalf, endHalf }
+  const thisYear = end.startsWith(year) ? days : clippedDays(owner, span, input.startDate, `${year}-12-31`)
   return {
     days,
     deductsVacation: t.deductsVacation,
     vacationRemaining: vac.remainingAfterPending,
-    vacationAfter: vac.remainingAfterPending - (t.deductsVacation ? days : 0),
+    vacationAfter: vac.remainingAfterPending - (t.deductsVacation ? thisYear : 0),
   }
 }
 
-/** Requests waiting for the actor: HR all (except own), leads their teams, administrators those only they can decide. */
+/**
+ * Requests waiting for the actor: HR all (except own), leads their teams, administrators those only they can
+ * decide. People who left stay in: their pending requests block the sign-off of their last months.
+ */
 export function pendingForApprover(actor: Actor): Absence[] {
   if (!actor.isHr && !actor.isAdmin && actor.ledTeamIds.size === 0) return []
   const rows = db
     .select({ a: absences })
     .from(absences)
     .innerJoin(users, eq(users.id, absences.userId))
-    .where(and(eq(absences.status, "pending"), eq(users.isActive, true), ne(users.id, actor.id)))
+    .where(and(eq(absences.status, "pending"), ne(users.id, actor.id)))
     .orderBy(asc(absences.startDate), asc(absences.id))
     .all()
     .map((r) => r.a)
@@ -554,7 +598,7 @@ export function pendingForApprover(actor: Actor): Absence[] {
   const decides = new Map<number, boolean>()
   return rows.filter((a) => {
     const owner = owners.get(a.userId)
-    if (!owner) return false
+    if (!owner || !seesDate(actor, owner, a.endDate)) return false
     if (!decides.has(owner.id)) decides.set(owner.id, canDecide(actor, owner))
     return decides.get(owner.id)
   })

@@ -8,7 +8,7 @@ Do **not** open a public issue. Use GitHub's private vulnerability reporting (ht
 
 ## Supported versions
 
-Only the latest 2.x release receives security fixes. 1.x is no longer maintained; migrate with [docs/migration-from-v1.md](docs/migration-from-v1.md). Updating: [docs/installation.md](docs/installation.md#updates).
+Only the latest 2.x release receives security fixes. 1.x is no longer maintained. Updating: [docs/installation.md](docs/installation.md#updates).
 
 ## In scope
 

@@ -133,7 +133,7 @@ function VerifyStep({ uri, onDone }: { uri: string; onDone: () => void }) {
           <div className="flex min-w-0 flex-col gap-2">
             <p className="text-sm font-medium">{t("profile.mfa.manual_key")}</p>
             <p className="text-xs text-muted-foreground">{t("profile.mfa.manual_key_help")}</p>
-            <code className="rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-sm break-all select-all">
+            <code className="rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-sm select-all">
               {secret.match(/.{1,4}/g)?.join(" ")}
             </code>
             <Button
@@ -244,7 +244,7 @@ export function MfaSection() {
           void refresh()
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             {flow?.kind === "enable" && flow.step === "verify" ? (

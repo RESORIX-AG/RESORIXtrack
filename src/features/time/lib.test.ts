@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest"
-import { fmtClockTime, minToHhmm, minutesOfDay, parseDuration, parseTimeText, wallClock, wallToInstant } from "./lib"
+import {
+  fmtClockTime,
+  minToHhmm,
+  minutesOfDay,
+  newEntryTimes,
+  parseDuration,
+  parseTimeText,
+  wallClock,
+  wallToInstant,
+} from "./lib"
 
 describe("time lib", () => {
+  it("starts a new entry at the quarter hour nearest to now", () => {
+    expect(newEntryTimes(14 * 60 + 7, false)).toEqual({ start: "14:00", end: "15:00" })
+    expect(newEntryTimes(14 * 60 + 8, false)).toEqual({ start: "14:15", end: "15:15" })
+    expect(newEntryTimes(23 * 60 + 55, false)).toEqual({ start: "23:45", end: "23:59" })
+    // today the end would lie in the future, so it stays empty
+    expect(newEntryTimes(14 * 60 + 7, true)).toEqual({ start: "14:00", end: "" })
+    // a slot picked on the timeline keeps its start
+    expect(newEntryTimes(14 * 60, true, "09:00")).toEqual({ start: "09:00", end: "10:00" })
+  })
+
   it("parses typed times leniently", () => {
     expect(parseTimeText("9")).toBe("09:00")
     expect(parseTimeText("930")).toBe("09:30")

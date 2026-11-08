@@ -1,6 +1,6 @@
 # Installation
 
-For the person who runs RESORIXtrack on a server. Coming from 1.x: read [migration-from-v1.md](migration-from-v1.md) first.
+For the person who runs RESORIXtrack on a server.
 
 ## Requirements
 
@@ -81,7 +81,7 @@ Optional, any OIDC provider (e.g. Pocket ID).
 2. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (and `OIDC_NAME` for the button label).
 3. Restart: `docker compose up -d`.
 
-A sign-in succeeds only for an existing active person with the same email (verified by the provider unless `OIDC_REQUIRE_VERIFIED_EMAIL=false`); nobody is created. With `OIDC_ONLY=true` password sign-in is off; break-glass: `docker compose exec app rt reset-password --email <email> --password '<password>'` allows one password sign-in.
+A sign-in succeeds only for an existing active person with the same email (verified by the provider unless `OIDC_REQUIRE_VERIFIED_EMAIL=false`); nobody is created. With `OIDC_ONLY=true` password sign-in is off; break-glass: `docker compose exec app rt reset-password --email <email>` asks for a password and allows one password sign-in.
 
 ## Updates
 
@@ -94,7 +94,6 @@ On start the app runs `rt migrate`: with pending migrations it first writes an e
 
 The app refuses, without touching the file:
 
-- a RESORIXtrack 1.x database: import it into a new data directory with `rt import-v1`, see [migration-from-v1.md](migration-from-v1.md);
 - a database already upgraded by a newer version: downgrades are not supported; install the newer version or restore a backup made with this one.
 
 ## Health and worker
@@ -128,16 +127,15 @@ Run inside the container: `docker compose exec app rt <command>`. `rt help` list
 | `setup-code` | Fresh one-time code for the setup wizard |
 | `migrate [--check] [--no-backup]` | Back up, then apply pending migrations (runs on start); `--check` exits 1 when pending |
 | `create-admin --email --name --password` | Create an administrator |
-| `reset-password --email --password` | Set a password, end all sessions (break-glass with `OIDC_ONLY`) |
+| `reset-password --email [--password]` | Set a password (asked when left out), end all sessions and API keys (break-glass with `OIDC_ONLY`) |
 | `backup [--label x] [--no-attachments]` | Encrypted backup now |
 | `restore <file> [--yes] [--ask-password]` | Restore a backup (app stopped), see [backup-restore.md](backup-restore.md) |
-| `decrypt-backup <file> --out <dir> [--ask-password]` | Decrypt a v1 or v2 backup into an empty directory without restoring it |
+| `decrypt-backup <file> --out <dir> [--ask-password]` | Decrypt a backup into an empty directory without restoring it |
 | `anonymize --email <email> [--yes]` | Anonymise a former employee once the retention period is over |
-| `install-holidays --preset <key> [--years 2026,2027] [--default]` | Public holidays from a Swiss preset (`CH-ZH` … or `ch-fr-fribourg`) |
+| `install-holidays --preset <key> [--days "Easter Monday,Whit Monday"] [--years 2026,2027] [--default]` | Public holidays from a canton preset (`CH-ZH` …); `--days` ticks optional days (default: the canton's commune days) |
 | `install-holidays --top-up` | Add the missing years to all preset calendars (the worker does it every 1 October) |
 | `send-reminders` | Send clock-out reminders now |
 | `verify-signoffs` | Check every sign-off seal chain; exit 1 on problems |
-| `import-v1 --data <dir>` | Migrate from 1.x, see [migration-from-v1.md](migration-from-v1.md) |
 | `worker-alive` | Worker health check |
 
 ## Environment reference
@@ -156,8 +154,8 @@ Secrets can be read from files by appending `_FILE` (`SECRET_KEY_FILE`, `SIGNOFF
 
 | Variable | Default | Description |
 |---|---|---|
-| `SIGNOFF_KEY` | `SECRET_KEY` | Key for sign-off seals. Keep it apart from backups. After a v1 import: the key v1 sealed with. |
-| `TRUSTED_PROXIES` | `0` | Proxies in front of the app. Forwarded headers are trusted only when `>= 1`. |
+| `SIGNOFF_KEY` | `SECRET_KEY` | Key for sign-off seals. Keep it apart from backups. |
+| `TRUSTED_PROXIES` | `0` | Proxies in front of the app. Forwarded headers are trusted only when `>= 1`; with `0` the TCP peer is the client. |
 | `SESSION_COOKIE_SECURE` | `true` | Cookies over HTTPS only. `false` only for a plain-HTTP test. |
 | `SESSION_REMEMBER_DAYS` | `30` | Session lifetime with "Keep me signed in" (extended while in use). |
 | `SESSION_SHORT_IDLE_HOURS` | `12` | Idle timeout without "Keep me signed in". |

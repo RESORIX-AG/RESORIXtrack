@@ -1,15 +1,14 @@
 /**
- * Projects people book work log items on. Company-wide projects (no team) and team projects. Team leads
+ * Projects people book their time entries on. Company-wide projects (no team) and team projects. Team leads
  * manage the projects of the teams they lead; the `projects` capability manages all of them.
  */
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "../db"
-import { type Project, projects, teams, type User, workLogs } from "../db/schema"
+import { type Project, projects, teams, type User } from "../db/schema"
 import { Conflict, Forbidden, NotFound, Validation } from "../errors"
 import { iso, utcnow } from "../time"
 import { type Actor, canManageProjects } from "./permissions"
 import { record, snapshot } from "./revisions"
-import { getSetting } from "./settings"
 
 export interface ProjectView {
   id: number
@@ -142,119 +141,4 @@ export function saveProject(actor: Actor, input: ProjectInput, projectId?: numbe
     record({ entity: "project", row: p, action: "update", actor, subjectUserId: null, before })
   }
   return serializeProjects([p], actor)[0]
-}
-
-// ------------------------------------------------------------------ aggregation (reports)
-
-export interface ProjectReportRow {
-  key: string
-  projectId: number | null
-  customerRef: string
-  kind: "project" | "customer" | "none"
-  name: string | null
-  code: string
-  color: string
-  teamName: string | null
-  minutes: number
-  items: number
-  people: { userId: number; name: string; minutes: number }[]
-}
-
-export interface ProjectReport {
-  start: string
-  end: string
-  projects: ProjectReportRow[]
-  people: {
-    userId: number
-    name: string
-    teamName: string | null
-    minutes: number
-    items: number
-    byProject: Record<string, number>
-  }[]
-  totalMin: number
-  company: string
-}
-
-/** Logged minutes per project (or customer reference) and person in [start, end]; deleted items excluded. */
-export function projectReport(people: User[], start: string, end: string): ProjectReport {
-  const ids = people.map((u) => u.id)
-  const rows = ids.length
-    ? db
-        .select({ log: workLogs, project: projects })
-        .from(workLogs)
-        .leftJoin(projects, eq(projects.id, workLogs.projectId))
-        .where(
-          and(
-            inArray(workLogs.userId, ids),
-            gte(workLogs.date, start),
-            lte(workLogs.date, end),
-            eq(workLogs.isDeleted, false),
-          ),
-        )
-        .all()
-    : []
-  const teamsById = teamNames([...people.map((u) => u.teamId), ...rows.map((r) => r.project?.teamId ?? null)])
-  const byProject = new Map<string, { row: ProjectReportRow; perPerson: Map<number, number> }>()
-  const byPerson = new Map<number, ProjectReport["people"][number]>(
-    people.map((u) => [
-      u.id,
-      {
-        userId: u.id,
-        name: u.name,
-        teamName: u.teamId != null ? (teamsById.get(u.teamId) ?? null) : null,
-        minutes: 0,
-        items: 0,
-        byProject: {},
-      },
-    ]),
-  )
-  for (const { log: w, project: p } of rows) {
-    const key = w.customerRef ? `customer:${w.customerRef}` : `project:${w.projectId ?? "none"}`
-    let entry = byProject.get(key)
-    if (!entry) {
-      entry = {
-        row: {
-          key,
-          projectId: w.projectId,
-          customerRef: w.customerRef,
-          kind: w.customerRef ? "customer" : p ? "project" : "none",
-          name: w.customerRef || p?.name || null,
-          code: p?.code ?? "",
-          color: p?.color ?? "",
-          teamName: p?.teamId != null ? (teamsById.get(p.teamId) ?? null) : null,
-          minutes: 0,
-          items: 0,
-          people: [],
-        },
-        perPerson: new Map(),
-      }
-      byProject.set(key, entry)
-    }
-    entry.row.minutes += w.minutes
-    entry.row.items++
-    entry.perPerson.set(w.userId, (entry.perPerson.get(w.userId) ?? 0) + w.minutes)
-    const person = byPerson.get(w.userId)
-    if (person) {
-      person.minutes += w.minutes
-      person.items++
-      const label = w.customerRef || p?.name || ""
-      person.byProject[label] = (person.byProject[label] ?? 0) + w.minutes
-    }
-  }
-  for (const { row, perPerson } of byProject.values())
-    row.people = [...perPerson.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([userId, minutes]) => ({ userId, name: byPerson.get(userId)?.name ?? "", minutes }))
-  const result = [...byProject.values()]
-    .map((e) => e.row)
-    .sort((a, b) => b.minutes - a.minutes || (a.name ?? "~").localeCompare(b.name ?? "~"))
-  return {
-    start,
-    end,
-    projects: result,
-    people: [...byPerson.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    totalMin: result.reduce((s, r) => s + r.minutes, 0),
-    company: getSetting("company_name"),
-  }
 }

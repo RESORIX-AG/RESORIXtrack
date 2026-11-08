@@ -12,31 +12,38 @@ import { cn } from "@/lib/utils"
 import { markNotificationsRead, notificationsQuery } from "./api"
 import { notificationHref, notificationText } from "./text"
 
+type NotificationList = { items?: { id: number; read: boolean }[]; unread: number }
+
+function applyRead<T extends NotificationList>(state: T, ids: number[] | null): T {
+  const hit = (id: number) => ids === null || ids.includes(id)
+  const newlyRead = state.items?.filter((n) => !n.read && hit(n.id)).length ?? 0
+  return {
+    ...state,
+    items: state.items?.map((n) => (hit(n.id) ? { ...n, read: true } : n)),
+    unread: ids === null ? 0 : Math.max(0, state.unread - newlyRead),
+  }
+}
+
 export function NotificationsBell() {
   const i = useI18n()
   const me = useMe()
-  const initialUnread = useBootstrap().counts.unread
+  // the badge counts from the bootstrap (refreshed with it); the list loads while the popover is open
+  const unreadCount = useBootstrap().counts.unread
   const [open, setOpen] = useState(false)
   const qc = useQueryClient()
   const q = useQuery({ ...notificationsQuery, enabled: open })
-  // read marks show at once; the lists are refetched when the Action settles (a failure falls back to them)
+  // read marks show at once; both are reloaded when the Action settles (a failure falls back to them)
   const [{ items, unread }, markLocally] = useOptimistic(
-    { items: q.data?.items, unread: q.data?.unread ?? initialUnread },
-    (state, ids: number[] | null) => {
-      const hit = (id: number) => ids === null || ids.includes(id)
-      const newlyRead = state.items?.filter((n) => !n.read && hit(n.id)).length ?? 0
-      return {
-        items: state.items?.map((n) => (hit(n.id) ? { ...n, read: true } : n)),
-        unread: ids === null ? 0 : Math.max(0, state.unread - newlyRead),
-      }
-    },
+    { items: q.data?.items, unread: unreadCount },
+    (state, ids: number[] | null) => applyRead(state, ids),
   )
   const markRead = (ids: number[] | null) =>
     startTransition(async () => {
       markLocally(ids)
       await markNotificationsRead({ data: { ids } }).catch(() => undefined)
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["notifications"] }),
+        // fetched even with the popover closed (a disabled query ignores invalidation), so a reopen is current
+        qc.prefetchQuery({ ...notificationsQuery, staleTime: 0 }),
         qc.invalidateQueries({ queryKey: ["bootstrap"] }),
       ])
     })

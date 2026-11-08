@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm"
 import { describe, expect, it } from "vitest"
 import { loadActor, makeAdmin, makeUser, withSettings } from "@/test/factories"
 import { db } from "../db"
-import { account, passkey, users } from "../db/schema"
+import { account, passkey } from "../db/schema"
+import { env } from "../env"
 import { mfaEnrolmentDue, mfaRequiredFor, mfaSatisfied } from "./mfa-policy"
-import { deletePasskey, listPasskeys, renamePasskey, securityState } from "./profile"
+import { deletePasskey, listPasskeys, renamePasskey } from "./profile"
 
 function addPasskey(userId: number, name = "Laptop") {
   return db
@@ -44,18 +44,15 @@ describe("MFA enforcement flags", () => {
     db.insert(account)
       .values({ userId: admin.id, accountId: "sub", providerId: "oidc", createdAt: now, updatedAt: now })
       .run()
-    expect(mfaEnrolmentDue(admin)).toBe(false)
-  })
-
-  it("asks people imported from v1 with two-factor to enrol again", () => {
-    const u = makeUser({ mfaReenrolRequired: true })
-    expect(securityState(loadActor(u.id))).toMatchObject({
-      mfaDue: true,
-      reenrolRequired: true,
-      twoFactorEnabled: false,
-    })
-    db.update(users).set({ twoFactorEnabled: true }).where(eq(users.id, u.id)).run()
-    expect(securityState(loadActor(u.id)).mfaDue).toBe(false)
+    // a single sign-on link counts only while single sign-on is configured
+    expect(mfaEnrolmentDue(admin)).toBe(true)
+    const saved = { ...env.oidc }
+    Object.assign(env.oidc, { issuer: "https://sso.example.com", clientId: "rt" })
+    try {
+      expect(mfaEnrolmentDue(admin)).toBe(false)
+    } finally {
+      Object.assign(env.oidc, saved)
+    }
   })
 })
 

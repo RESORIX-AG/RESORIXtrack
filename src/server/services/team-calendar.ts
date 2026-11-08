@@ -10,7 +10,7 @@ import { teams, type User, users } from "../db/schema"
 import { Validation } from "../errors"
 import { isSensitive } from "./absence-types"
 import { computeDays, type DayAbsence } from "./accounts"
-import { type Actor, canViewUser, visibleUserIds } from "./permissions"
+import { type Actor, canViewUser, seesDate, visibleUserIds } from "./permissions"
 
 export { calendarInput } from "./team-calendar.schemas"
 
@@ -84,7 +84,8 @@ export function teamCalendar(actor: Actor, raw: z.input<typeof calendarInput>) {
         date: d.date,
         workday: d.isWorkday,
         holiday: d.holiday,
-        absences: d.absences.map((x) => publicAbsence(x, full)),
+        // before a lead's cover started they see the team calendar like a colleague does
+        absences: d.absences.map((x) => publicAbsence(x, full && seesDate(actor, u, d.date))),
       })),
     }
   })

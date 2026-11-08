@@ -17,6 +17,7 @@ export const MAIL_KINDS = [
   "invite", // url, days, actorName?
   "password_reset", // url, minutes
   "password_changed",
+  "passkey_added",
   "password_set_by_admin", // actorName
   "email_changed", // newEmail, actorName?
   "entry_corrected", // actorName, action (create|update|delete), date, start (HH:MM), end?, reason?
@@ -131,6 +132,8 @@ function build(kind: MailKind, L: MailStrings, locale: string, v: JsonObject, ct
       }
     case "password_changed":
       return { subject: say("password_changed.subject"), paragraphs: body("password_changed.body") }
+    case "passkey_added":
+      return { subject: say("passkey_added.subject"), paragraphs: body("passkey_added.body") }
     case "password_set_by_admin":
       return {
         subject: say("password_set_by_admin.subject"),

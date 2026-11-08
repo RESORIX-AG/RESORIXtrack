@@ -21,7 +21,7 @@
 import { createFormHook, createFormHookContexts, useStore } from "@tanstack/react-form"
 import { type ComponentProps, type ReactNode, useId } from "react"
 import { Segmented, type SegmentedOption } from "@/components/app/segmented"
-import { SettingRow } from "@/components/app/settings"
+import { SaveBar as SaveBarFrame, SettingRow, SettingsFooter } from "@/components/app/settings"
 import { Button } from "@/components/ui/button"
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox"
 import { DatePicker, type DayMarks } from "@/components/ui/date-picker"
@@ -41,7 +41,7 @@ export const { fieldContext, formContext, useFieldContext, useFormContext } = cr
  * Field errors are either messages or codes. A code without spaces is translated: `ns.key` as is, a bare code
  * via `errors.fields.<code>` (server field errors, zod refine messages); unknown codes fall back to the text.
  */
-function messageOf(err: unknown, tr: (k: string) => string): string {
+export function messageOf(err: unknown, tr: (k: string) => string): string {
   const raw = typeof err === "string" ? err : (errorMessage(err) ?? "")
   if (!raw || /\s/.test(raw)) return raw
   const key = raw.includes(".") && !raw.startsWith("fields.") ? raw : `errors.fields.${raw.replace(/^fields\./, "")}`
@@ -162,6 +162,7 @@ export function TextareaField({
   const { field, error, id } = useFieldFrame<string | null | undefined>()
   const length = (field.state.value ?? "").length
   const counter = maxLength && length >= maxLength * 0.8 ? `${length} / ${maxLength}` : null
+  const full = maxLength != null && length >= maxLength
   return (
     <Frame
       id={id}
@@ -190,7 +191,7 @@ export function TextareaField({
           <span
             className={cn(
               "pointer-events-none absolute right-2.5 bottom-1.5 text-xs tabular",
-              length >= maxLength! ? "text-destructive" : "text-muted-foreground",
+              full ? "text-destructive" : "text-muted-foreground",
             )}
             aria-live="polite"
           >
@@ -210,10 +211,12 @@ export function SelectField({
   controlClassName,
   options,
   placeholder,
+  disabled,
 }: BaseProps & {
   /** `short` is shown in the closed trigger when the full label is long */
   options: { value: string; label: ReactNode; short?: ReactNode }[]
   placeholder?: string
+  disabled?: boolean
 }) {
   const { field, error, id } = useFieldFrame()
   return (
@@ -237,6 +240,7 @@ export function SelectField({
           field.handleChange(v ?? "")
           field.handleBlur()
         }}
+        disabled={disabled}
       >
         <SelectTrigger id={id} data-field={field.name} aria-invalid={error ? true : undefined} className="w-full">
           <SelectValue placeholder={placeholder} />
@@ -254,12 +258,18 @@ export function SelectField({
 }
 
 /** A form-submitted on/off (checkbox semantics). For immediate settings use a plain Switch outside forms. */
-export function SwitchField({ label, description, row }: Omit<BaseProps, "srLabel" | "controlClassName">) {
+export function SwitchField({
+  label,
+  description,
+  row,
+  disabled,
+}: Omit<BaseProps, "srLabel" | "controlClassName"> & { disabled?: boolean }) {
   const { field, id } = useFieldFrame()
   const control = (
     <Switch
       id={id}
       data-field={field.name}
+      disabled={disabled}
       checked={Boolean(field.state.value)}
       onCheckedChange={(v) => field.handleChange(v)}
     />
@@ -427,6 +437,32 @@ export function SubmitButton({ children, ...props }: Omit<ComponentProps<typeof 
   )
 }
 
+/**
+ * Save (and Discard while there are unsaved changes) for a settings form. `page`: spans the page and sticks to
+ * the bottom while there are unsaved changes; `group`: the last row of a settings group.
+ */
+export function SaveBar({ placement = "page" }: { placement?: "page" | "group" }) {
+  const form = useFormContext()
+  const { t } = useI18n()
+  const dirty = useStore(form.store, (s) => !s.isDefaultValue)
+  if (placement === "group")
+    return (
+      <SettingsFooter note={dirty ? t("admin.settings.unsaved") : undefined}>
+        <SubmitButton variant={dirty ? "default" : "outline"}>{t("common.save")}</SubmitButton>
+      </SettingsFooter>
+    )
+  return (
+    <SaveBarFrame dirty={dirty} label={t("admin.settings.unsaved")}>
+      {dirty ? (
+        <Button type="button" variant="ghost" onClick={() => form.reset()}>
+          {t("common.discard")}
+        </Button>
+      ) : null}
+      <SubmitButton>{t("common.save")}</SubmitButton>
+    </SaveBarFrame>
+  )
+}
+
 export const { useAppForm, withForm } = createFormHook({
   fieldContext,
   formContext,
@@ -439,7 +475,7 @@ export const { useAppForm, withForm } = createFormHook({
     SegmentedField,
     ComboboxField,
   },
-  formComponents: { SubmitButton },
+  formComponents: { SubmitButton, SaveBar },
 })
 
 /**

@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import Database from "better-sqlite3"
@@ -8,15 +17,7 @@ import { makeAdmin, makeUser } from "@/test/factories"
 import { openSqlite, runMigrations, setDatabase } from "../db"
 import { env } from "../env"
 import { encryptBuffer } from "./backup-crypto"
-import {
-  createBackup,
-  deleteBackup,
-  listBackups,
-  openBackup,
-  restoreBackup,
-  rotateBackups,
-  V1BackupError,
-} from "./backups"
+import { createBackup, deleteBackup, listBackups, openBackup, restoreBackup, rotateBackups } from "./backups"
 import { loadActor } from "./permissions"
 
 let dir: string
@@ -37,6 +38,36 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+const ORPHAN = "orphan-document-0001.pdf"
+
+/** An installation to restore over: a database with one marker row and one document. */
+function installation(name: string) {
+  const root = path.join(dir, name)
+  const target = path.join(root, "resorixtrack.db")
+  mkdirSync(path.join(root, "attachments"), { recursive: true })
+  writeFileSync(path.join(root, "attachments", ORPHAN), "sick note")
+  const cur = new Database(target)
+  cur.exec("CREATE TABLE marker (v TEXT); INSERT INTO marker VALUES ('before')")
+  cur.close()
+  const marker = () => {
+    const d = new Database(target, { readonly: true })
+    try {
+      return d.prepare("SELECT name FROM sqlite_master WHERE name = 'marker'").get() != null
+    } finally {
+      d.close()
+    }
+  }
+  const leftovers = () => readdirSync(root).filter((f) => f.includes("before-restore") || f.includes("restore-tmp"))
+  const restore = (opened: Awaited<ReturnType<typeof openBackup>>) =>
+    restoreBackup(opened, { databasePath: target, dataDir: root })
+  return { root, marker, leftovers, restore }
+}
+
+async function backup(opts: Parameters<typeof createBackup>[0] = {}) {
+  const info = await createBackup(opts)
+  return openBackup(path.join(env.backupsDir, info.name), env.backupPassword)
+}
+
 describe("backups", () => {
   it("creates an encrypted backup that restores into a fresh database", async () => {
     makeUser({ name: "Anna Muster" })
@@ -56,8 +87,7 @@ describe("backups", () => {
     mkdirSync(path.dirname(target), { recursive: true })
     writeFileSync(target, "")
     new Database(target).close()
-    const r = restoreBackup(opened, { databasePath: target, dataDir: path.join(dir, "restore") })
-    expect(r.safetyCopy).toBeTruthy()
+    restoreBackup(opened, { databasePath: target, dataDir: path.join(dir, "restore") })
     const restored = new Database(target, { readonly: true })
     expect(restored.prepare("SELECT name FROM users").all()).toEqual([{ name: "Anna Muster" }])
     restored.close()
@@ -78,6 +108,43 @@ describe("backups", () => {
     sqlite.close()
   })
 
+  it("deletes the unencrypted copies of the replaced data after a restore, also older ones", async () => {
+    makeUser({ name: "Anna Muster" })
+    const opened = await backup() // with documents, of which there were none
+    expect(opened.manifest.includeAttachments).toBe(true)
+    const inst = installation("live")
+    writeFileSync(path.join(inst.root, "resorixtrack.db.before-restore-20250101-000000"), "old")
+    mkdirSync(path.join(inst.root, "attachments.before-restore-20250101-000000"))
+    inst.restore(opened)
+    expect(inst.marker()).toBe(false)
+    expect(inst.leftovers()).toEqual([])
+    expect(readdirSync(path.join(inst.root, "attachments"))).toEqual([])
+  })
+
+  it("keeps the documents when the backup was made without them", async () => {
+    const opened = await backup({ includeAttachments: false })
+    const inst = installation("live")
+    inst.restore(opened)
+    expect(inst.marker()).toBe(false)
+    expect(readdirSync(path.join(inst.root, "attachments"))).toEqual([ORPHAN])
+    expect(inst.leftovers()).toEqual([])
+  })
+
+  it("puts the database, documents and logos back when a restore fails", async () => {
+    mkdirSync(env.brandingDir, { recursive: true })
+    writeFileSync(path.join(env.brandingDir, "logo-dark.svg"), "<svg/>")
+    const opened = await backup()
+    const inst = installation("live")
+    // a directory where the backup's logo goes makes the last step fail
+    mkdirSync(path.join(inst.root, "branding", "logo-dark.svg"), { recursive: true })
+    writeFileSync(path.join(inst.root, "branding", "logo-light.svg"), "<svg id='mine'/>")
+    expect(() => inst.restore(opened)).toThrow()
+    expect(inst.marker()).toBe(true)
+    expect(readdirSync(path.join(inst.root, "attachments"))).toEqual([ORPHAN])
+    expect(readFileSync(path.join(inst.root, "branding", "logo-light.svg"), "utf8")).toBe("<svg id='mine'/>")
+    expect(inst.leftovers()).toEqual([])
+  })
+
   it("refuses a wrong password", async () => {
     const info = await createBackup()
     await expect(openBackup(path.join(env.backupsDir, info.name), "another-password")).rejects.toThrow(
@@ -85,22 +152,16 @@ describe("backups", () => {
     )
   })
 
-  it("detects a v1 backup and extracts it for import-v1", async () => {
+  it("refuses a RESORIXtrack 1.x backup", async () => {
     const v1zip = zipSync({
       "resorixtrack.db": Buffer.from("sqlite"),
       "manifest.json": Buffer.from(
         JSON.stringify({ app: "resorixtrack", version: "1.0.0", format: 2, encrypted: "RTBK1" }),
       ),
-      "attachments/0123456789abcdef0123456789abcdef": Buffer.from("pdf"),
     })
     const file = path.join(dir, "resorixtrack-20260101-020000-auto.zip.enc")
     writeFileSync(file, await encryptBuffer(v1zip, env.backupPassword))
-    const err = await openBackup(file, env.backupPassword).catch((e: unknown) => e)
-    expect(err).toBeInstanceOf(V1BackupError)
-    const out = (err as V1BackupError).extractedTo
-    expect(readFileSync(path.join(out, "resorixtrack.db"), "utf8")).toBe("sqlite")
-    expect(existsSync(path.join(out, "attachments", "0123456789abcdef0123456789abcdef"))).toBe(true)
-    rmSync(out, { recursive: true, force: true })
+    await expect(openBackup(file, env.backupPassword)).rejects.toThrow(/1\.x/)
   })
 
   it("lists, rotates and deletes (administrators only)", async () => {

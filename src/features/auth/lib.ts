@@ -16,6 +16,7 @@ export function authErrorKey(err: { code?: string; status?: number } | null | un
     return "errors.too_many_requests"
   if (code === "INACTIVE") return "auth.inactive"
   if (code === "OIDC_ONLY") return "auth.use_sso"
+  if (code === "USE_STRONG_SIGN_IN") return "auth.use_strong_sign_in"
   if (code === "INVALID_CODE" || code === "INVALID_BACKUP_CODE") return "errors.invalid_mfa"
   if (code === "INVALID_TWO_FACTOR_COOKIE" || code === "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE") return "errors.mfa_expired"
   if (code === "INVALID_TOKEN") return "errors.invalid_token"

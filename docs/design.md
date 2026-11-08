@@ -33,9 +33,9 @@ only when you can name the reason in one sentence.
 - Choose the control by the decision: immediate on/off → `Switch` (applies now); on/off inside a form →
   `Checkbox`/`SwitchField` (applies on save); 2–5 visible options → `Segmented` (`SegmentedField`); short fixed
   lists up to 6 → `Select`; dynamic or long lists (teams, people, projects, calendars, timezones, cantons) →
-  searchable `Combobox` (`ComboboxField`); action → `<button>`, navigation → `<Link>`.
-- No native pickers: dates use `DatePicker`/`DateField`, colours `ColorPicker`, files `FilePicker`, times our
-  `TimeInput` (follows 12/24 h).
+  searchable `Combobox` (`ComboboxField`). Both open below the trigger, never over it; action → `<button>`, navigation → `<Link>`.
+- No native pickers: dates use `DatePicker`/`DateField`, colours `ColorPicker`, files `FilePicker`, times
+  `TimeInput`/`TimeField` (follows 12/24 h, suggests times in a list). Pickers drop the leading icon when a label sits above.
 - Geometry: inputs, selects, buttons, date triggers and segmented controls are 36 px (`h-9`), icon buttons
   `size-9`; 32 px (`sm`) only inside table rows and dense table toolbars. Controls `rounded-lg`, segments and
   chips `rounded-md`, cards `rounded-xl`.
@@ -46,13 +46,16 @@ only when you can name the reason in one sentence.
   dialog (required decision or destructive confirm only) → page. On mobile, dialogs with forms become
   `Drawer`/`Sheet` from the bottom.
 - **Reversible actions run immediately with an Undo toast** (`undoToast`). Confirm only irreversible,
-  high-consequence actions, effortfully (`ConfirmDialog typeToConfirm`).
+  high-consequence actions, effortfully (`ConfirmDialog typeToConfirm`). Toasts stack expanded (max 3),
+  hide after 4 s (Undo 8 s) and their action button is primary.
 - Don't disable without explanation. A submit button stays enabled and explains on click; when something is
   unavailable for a reason the user can fix, say how (e.g. "Select employees to sign off").
 
 ## Layout
 
 - One page width (`Page`: `max-w-screen-2xl`); reading text keeps a measure on the text block (`max-w-prose`).
+- Nothing above a tab bar changes with the active tab, so the bar never moves: a tab's own actions sit in
+  its panel (`Section` actions), not in the `PageHeader`.
 - Settings, profile and person detail use `SettingsGroup` + `SettingRow`: a titled card, rows split by
   hairlines, label and short hint left (at most half), control right; stacked below `md`. Save bar spans the
   page and sticks to the bottom only while there are unsaved changes.
@@ -116,6 +119,8 @@ pagination off (`pageSize={false}`): above 150 rows the DataTable renders only t
 container with a sticky header, with fixed column widths (`meta.width`) so nothing jumps. Server logs load older
 rows while scrolling (cursor pages, `infinite`) instead of page buttons. Rows stay keyboard reachable (↑/↓,
 Enter) and screen readers hear the full size.
+A table whose rows change with a period or filter (month, year, team) gives every column a `meta.width`, so
+switching never moves a column; below that width the table scrolls inside its card.
 
 ## Component checklist (run for every new element)
 

@@ -1,25 +1,29 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
+import type { AnyFormApi } from "@tanstack/react-form"
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import { Link, useRouter } from "@tanstack/react-router"
 import { ChevronLeft } from "lucide-react"
+import { useState } from "react"
 import { toast } from "sonner"
+import { EffectiveDateDialog } from "@/components/app/effective-date-dialog"
 import { Page, PageHeader } from "@/components/app/page"
-import { SaveBar } from "@/components/app/settings"
 import { PanelSkeleton, TabPanel } from "@/components/app/tab-panel"
 import { TabStrip } from "@/components/app/tab-strip"
 import { PersonAvatar } from "@/components/app/user-menu"
 import { FormRoot } from "@/components/form/form"
 import { applyServerErrors } from "@/components/form/server-errors"
-import { Button, ButtonLink } from "@/components/ui/button"
+import { ButtonLink } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isOneOf } from "@/lib/guards"
 import { useI18n } from "@/lib/i18n"
 import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/locales"
+import { refreshSession } from "@/lib/session"
 import { updateUserFn, userDetailQuery, userRefsQuery } from "../api/users"
 import { USER_TABS, type UserTab } from "../search"
 import { useAction } from "../ui"
 import { AccessPanel } from "./access-panel"
 import { HistoryPanel } from "./history-panel"
 import { SchedulePanel } from "./schedule-panel"
+import { EarlierTerms, termsChanged } from "./terms-history"
 import { ContractFields, PersonFields, RegionFields, useUserForm } from "./user-fields"
 import { toPayload, type UserFormValues, weeklyMaxValue } from "./user-form"
 import { AccountStatus, RoleBadges } from "./users-page"
@@ -28,7 +32,9 @@ import { VacationPanel } from "./vacation-panel"
 export function UserDetailPage({ userId, tab, onTab }: { userId: number; tab: UserTab; onTab: (t: UserTab) => void }) {
   const { t } = useI18n()
   const { data: u } = useSuspenseQuery(userDetailQuery(userId))
-  const isLead = u.leadRoles.some((r) => r.active)
+  const active = u.leadRoles.filter((r) => r.active)
+  const isLead = active.length > 0
+  const isDeputy = isLead && active.every((r) => r.role === "deputy")
   return (
     <Page>
       <div className="-mb-3">
@@ -57,7 +63,7 @@ export function UserDetailPage({ userId, tab, onTab }: { userId: number; tab: Us
             <AccountStatus
               row={{ isActive: u.isActive, invitePending: u.invitePending, anonymized: u.anonymizedAt != null }}
             />
-            <RoleBadges row={{ role: u.role, capabilities: u.capabilities, isLead }} />
+            <RoleBadges row={{ role: u.role, capabilities: u.capabilities, isLead, isDeputy }} />
           </span>
         }
       />
@@ -99,12 +105,23 @@ export function UserDetailPage({ userId, tab, onTab }: { userId: number; tab: Us
 
 function ProfileForm({ userId }: { userId: number }) {
   const { t, tError } = useI18n()
+  const qc = useQueryClient()
+  const router = useRouter()
   const { data: u } = useSuspenseQuery(userDetailQuery(userId))
   const { data: refs } = useSuspenseQuery(userRefsQuery)
-  const save = useAction((v: UserFormValues) => updateUserFn({ data: { id: u.id, patch: toPayload(v) } }), {
-    success: t("common.saved"),
-    silentError: true,
-  })
+  const save = useAction(
+    ({ v, termsFrom }: { v: UserFormValues; termsFrom: string }) =>
+      updateUserFn({ data: { id: u.id, patch: { ...toPayload(v), termsFrom: termsFrom || null } } }),
+    {
+      success: t("common.saved"),
+      silentError: true,
+      onSuccess: () => {
+        // your own language, name or timezone: the whole app shows them, not only the admin pages
+        if (u.isSelf) void refreshSession(qc, router)
+      },
+    },
+  )
+  const [asking, setAsking] = useState<UserFormValues | null>(null)
   const defaults: UserFormValues = {
     name: u.name,
     email: u.email,
@@ -126,12 +143,16 @@ function ProfileForm({ userId }: { userId: number }) {
     pensumPercent: 100,
     sendInvite: false,
   }
+  const submit = async (f: AnyFormApi, v: UserFormValues, termsFrom: string) => {
+    await save.mutateAsync({ v, termsFrom })
+    f.reset(v)
+  }
+  const fail = (f: AnyFormApi, err: unknown) => {
+    if (!applyServerErrors(f, err)) toast.error(tError(err))
+  }
   const form = useUserForm(defaults, async (v, formApi) => {
-    try {
-      await save.mutateAsync(v)
-    } catch (err) {
-      if (!applyServerErrors(formApi, err)) toast.error(tError(err))
-    }
+    if (termsChanged(v, defaults)) setAsking(v)
+    else await submit(formApi, v, "").catch((err: unknown) => fail(formApi, err))
   })
   const locked = u.anonymizedAt != null
   return (
@@ -142,23 +163,23 @@ function ProfileForm({ userId }: { userId: number }) {
             <PersonFields form={form} refs={refs} rows />
             <RegionFields form={form} refs={refs} rows />
           </div>
-          <ContractFields form={form} rows />
+          <div className="flex flex-col gap-8">
+            <ContractFields form={form} rows />
+            <EarlierTerms user={u} />
+          </div>
         </fieldset>
-        {locked ? null : (
-          <form.Subscribe selector={(st) => st.isDirty}>
-            {(dirty) => (
-              <SaveBar dirty={dirty} label={t("admin.settings.unsaved")}>
-                {dirty ? (
-                  <Button type="button" variant="ghost" onClick={() => form.reset()}>
-                    {t("common.discard")}
-                  </Button>
-                ) : null}
-                <form.SubmitButton>{t("common.save")}</form.SubmitButton>
-              </SaveBar>
-            )}
-          </form.Subscribe>
-        )}
+        {locked ? null : <form.SaveBar />}
       </FormRoot>
+      {asking ? (
+        <EffectiveDateDialog
+          label={t("admin.users.terms_from")}
+          hint={t("admin.users.terms_from_help")}
+          errorField="termsFrom"
+          onSubmit={(from) => submit(form, asking, from)}
+          onFail={(err) => fail(form, err)}
+          onClose={() => setAsking(null)}
+        />
+      ) : null}
     </form.AppForm>
   )
 }

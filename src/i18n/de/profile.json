@@ -46,8 +46,8 @@
   "scope": {
     "time_read": "Zeiten lesen",
     "time_write": "Zeiten erfassen",
-    "absences_read": "Abwesenheiten lesen",
-    "absences_write": "Abwesenheiten beantragen",
+    "absences_read": "Absenzen lesen",
+    "absences_write": "Absenzen beantragen",
     "reports_read": "Berichte lesen"
   },
   "login_history": "Anmeldeverlauf",
@@ -67,7 +67,8 @@
     "oidc_no_account": "SSO: kein Konto",
     "oidc_unverified": "SSO: E-Mail nicht bestätigt",
     "setup_code": "Falscher Einrichtungscode",
-    "reset_requested": "Zurücksetzen angefordert"
+    "reset_requested": "Zurücksetzen angefordert",
+    "mfa_required": "Passwort allein nicht erlaubt"
   },
   "export_data": "Meine Daten herunterladen",
   "passkeys": "Passkeys",
@@ -105,6 +106,6 @@
     "code_from_app": "Code aus der App",
     "code_format": "Gib die 6 Ziffern ein",
     "required_cannot_disable": "Für dein Konto vorgeschrieben",
-    "banner": "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben."
+    "banner": "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Richte sie ein, um weiterzumachen."
   }
 }

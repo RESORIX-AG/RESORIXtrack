@@ -73,7 +73,6 @@
     "first_start": "Start",
     "last_end": "End",
     "edited": "Edited",
-    "worklog": "Work log",
     "name": "Name",
     "team": "Team",
     "taken": "Taken",
@@ -120,7 +119,6 @@
     "people_one": "{count} person",
     "people_other": "{count} people",
     "no_project": "No project",
-    "customer": "Customer",
     "entry_id": "ID",
     "email": "Email",
     "kind": "Kind",
@@ -156,7 +154,8 @@
     "supplement_percent": "Supplement %",
     "time_credit": "Time credit",
     "payroll": "Payroll",
-    "supplement_note": "Sunday/holiday supplement {percent} %"
+    "supplement_note": "Sunday/holiday supplement {percent} %",
+    "project_time": "Projects"
   },
   "tab": {
     "timesheet": "Timesheet",
@@ -181,7 +180,6 @@
   "all_projects": "All projects",
   "project": "Project",
   "people": "People",
-  "customer": "Customer",
   "no_project": "No project",
   "no_logs": "No work logged in this period.",
   "project_no_hours": "No hours on this project in this period.",

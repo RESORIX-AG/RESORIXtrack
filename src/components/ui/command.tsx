@@ -3,6 +3,7 @@ import { CheckIcon, SearchIcon } from "lucide-react"
 import type * as React from "react"
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
@@ -51,6 +52,8 @@ function CommandDialog({
 
 /** Search row of a command list: icon + plain input on a hairline, so the list scrolls cleanly below it. */
 function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  // a search box without a visible label is named by its placeholder
+  const name = props["aria-label"] ?? (typeof props.placeholder === "string" ? props.placeholder : undefined)
   return (
     <div data-slot="command-input-wrapper" className="-mx-1 -mt-1 mb-1 flex items-center gap-2 border-b px-3">
       <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -61,15 +64,18 @@ function CommandInput({ className, ...props }: React.ComponentProps<typeof Comma
           className,
         )}
         {...props}
+        aria-label={name}
       />
     </div>
   )
 }
 
 function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
+  const t = useT()
   return (
     <CommandPrimitive.List
       data-slot="command-list"
+      label={t("common.results")}
       className={cn("no-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none", className)}
       {...props}
     />

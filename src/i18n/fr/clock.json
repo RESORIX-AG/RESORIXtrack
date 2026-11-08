@@ -28,5 +28,7 @@
   "custom_time": "Autre heure",
   "scheduled": "Sortie timbrée automatiquement à {time}",
   "scheduled_short": "jusqu'à {time}",
-  "cancel_scheduled": "Annuler"
+  "cancel_scheduled": "Annuler",
+  "project": "Projet",
+  "next_project": "Pointer sur"
 }

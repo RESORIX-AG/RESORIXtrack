@@ -33,6 +33,10 @@ export const en = {
     "Use the link within {minutes} minutes to choose a new password.\n\nDidn't ask for this? Ignore this email; your password stays unchanged.",
   "password_reset.cta": "Choose new password",
 
+  "passkey_added.subject": "A passkey was added to your account",
+  "passkey_added.body":
+    "A new passkey was added to your RESORIXtrack account. It signs you in without password or two-factor code.\n\nNot you? Remove it under Profile → Passkeys, change your password and tell your administrator.",
+
   "password_changed.subject": "Your password was changed",
   "password_changed.body":
     "Your RESORIXtrack password was changed. Other devices were signed out.\n\nNot you? Reset your password at {url} and tell your administrator.",
@@ -134,6 +138,10 @@ export const de: MailStrings = {
     "Wähle über den Link innerhalb von {minutes} Minuten ein neues Passwort.\n\nNicht angefordert? Ignoriere diese E-Mail; dein Passwort bleibt unverändert.",
   "password_reset.cta": "Neues Passwort wählen",
 
+  "passkey_added.subject": "Ein Passkey wurde zu deinem Konto hinzugefügt",
+  "passkey_added.body":
+    "Zu deinem RESORIXtrack-Konto wurde ein neuer Passkey hinzugefügt. Er meldet dich ohne Passwort und Zwei-Faktor-Code an.\n\nWarst du das nicht? Entferne ihn unter Profil → Passkeys, ändere dein Passwort und informiere deine Administration.",
+
   "password_changed.subject": "Dein Passwort wurde geändert",
   "password_changed.body":
     "Dein RESORIXtrack-Passwort wurde geändert. Andere Geräte wurden abgemeldet.\n\nNicht du? Setze dein Passwort unter {url} zurück und informiere deine Administration.",
@@ -166,25 +174,25 @@ export const de: MailStrings = {
   "absence_reported.body": "{requester} hat «{type}» vom {start} bis {end} gemeldet ({days}).",
   "absence_reported.cta": "Team öffnen",
 
-  "absence_recorded.subject": "{actor} hat eine Abwesenheit für dich erfasst",
+  "absence_recorded.subject": "{actor} hat eine Absenz für dich erfasst",
   "absence_recorded.body": "{actor} hat für dich «{type}» vom {start} bis {end} erfasst ({days}).",
   "absence_recorded.attachments": "Du kannst in RESORIXtrack ein Arztzeugnis hochladen (freiwillig).",
-  "absence_recorded.cta": "Abwesenheiten ansehen",
+  "absence_recorded.cta": "Absenzen ansehen",
 
   "absence_approved.subject": "{type} bewilligt",
   "absence_approved.body": "{actor} hat «{type}» vom {start} bis {end} bewilligt ({days}).",
-  "absence_approved.cta": "Abwesenheiten ansehen",
+  "absence_approved.cta": "Absenzen ansehen",
 
   "absence_rejected.subject": "{type} abgelehnt",
   "absence_rejected.body": "{actor} hat deinen Antrag «{type}» vom {start} bis {end} abgelehnt.",
-  "absence_rejected.cta": "Abwesenheiten ansehen",
+  "absence_rejected.cta": "Absenzen ansehen",
 
   "absence_cancelled.subject": "{type} storniert",
   "absence_cancelled.body": "{actor} hat «{type}» vom {start} bis {end} storniert.",
-  "absence_cancelled.cta": "Abwesenheiten ansehen",
+  "absence_cancelled.cta": "Absenzen ansehen",
   "absence_changed.subject": "{type} geändert",
   "absence_changed.body": "{actor} hat «{type}» geändert: {start} bis {end}.",
-  "absence_changed.cta": "Abwesenheiten ansehen",
+  "absence_changed.cta": "Absenzen ansehen",
 
   "clock_reminder.subject": "Arbeitest du noch?",
   "clock_reminder.body":
@@ -233,6 +241,10 @@ export const fr: MailStrings = {
   "password_reset.body":
     "Utilise le lien dans les {minutes} minutes pour choisir un nouveau mot de passe.\n\nTu n'as rien demandé ? Ignore cet e-mail ; ton mot de passe reste inchangé.",
   "password_reset.cta": "Choisir un mot de passe",
+
+  "passkey_added.subject": "Une clé d'accès a été ajoutée à ton compte",
+  "passkey_added.body":
+    "Une nouvelle clé d'accès a été ajoutée à ton compte RESORIXtrack. Elle te connecte sans mot de passe ni code à deux facteurs.\n\nCe n'était pas toi ? Supprime-la sous Profil → Clés d'accès, change ton mot de passe et informe ton administrateur.",
 
   "password_changed.subject": "Ton mot de passe a été modifié",
   "password_changed.body":
@@ -331,6 +343,10 @@ export const it: MailStrings = {
   "password_reset.body":
     "Usa il link entro {minutes} minuti per scegliere una nuova password.\n\nNon l'hai richiesto? Ignora questa e-mail: la tua password resta invariata.",
   "password_reset.cta": "Scegli nuova password",
+
+  "passkey_added.subject": "Una passkey è stata aggiunta al tuo account",
+  "passkey_added.body":
+    "Al tuo account RESORIXtrack è stata aggiunta una nuova passkey. Ti fa accedere senza password né codice a due fattori.\n\nNon sei stato tu? Rimuovila in Profilo → Passkey, cambia la password e avvisa il tuo amministratore.",
 
   "password_changed.subject": "La tua password è stata modificata",
   "password_changed.body":

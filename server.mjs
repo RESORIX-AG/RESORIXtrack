@@ -6,6 +6,9 @@ import { serve } from "srvx"
 import { staticMiddleware } from "srvx/static"
 import app from "./dist/server/server.js"
 
+// Must match PEER_HEADER in src/server/client-ip.ts: the TCP peer, which a client cannot forge.
+const PEER_HEADER = "x-resorixtrack-peer"
+
 const assets = staticMiddleware({ dir: "dist/client", maxAge: 31536000, immutable: true })
 const publicFiles = staticMiddleware({ dir: "dist/client", maxAge: 3600 })
 
@@ -15,6 +18,11 @@ serve({
   middleware: [
     (req, next) => (new URL(req.url).pathname.startsWith("/assets/") ? assets(req, next) : publicFiles(req, next)),
   ],
-  fetch: (req) => app.fetch(req),
+  fetch: (req) => {
+    req.headers.delete(PEER_HEADER)
+    const peer = req.runtime?.node?.req.socket?.remoteAddress
+    if (peer) req.headers.set(PEER_HEADER, peer)
+    return app.fetch(req)
+  },
   gracefulShutdown: true,
 })

@@ -6,11 +6,13 @@
 import { env } from "./env"
 
 export const CLIENT_IP_HEADER = "x-resorixtrack-client-ip"
+/** The TCP peer address, set by server.mjs on every request (any incoming value is dropped there). */
+export const PEER_HEADER = "x-resorixtrack-peer"
 
 /**
  * Every proxy appends the address it saw to X-Forwarded-For, so with `trustedProxies` hops the client is the
  * entry that many from the right; everything left of it was supplied by the client. Without a trusted proxy
- * forwarded headers are ignored and only X-Real-IP is read.
+ * (or without X-Forwarded-For) the TCP peer is the client; X-Real-IP is never read, a client could set it.
  */
 export function clientIp(headers: Headers | undefined | null, trustedProxies = env.trustedProxies): string {
   if (!headers) return ""
@@ -24,7 +26,7 @@ export function clientIp(headers: Headers | undefined | null, trustedProxies = e
       return (parts[Math.max(0, parts.length - trustedProxies)] ?? "").slice(0, 64)
     }
   }
-  return (headers.get("x-real-ip") ?? "").slice(0, 64)
+  return (headers.get(PEER_HEADER) ?? "").slice(0, 64)
 }
 
 /** The request with CLIENT_IP_HEADER set to the client address (removed when it is unknown). */

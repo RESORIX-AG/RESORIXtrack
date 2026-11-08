@@ -121,7 +121,8 @@ export function SignoffPage({
   const { data: scope } = useSuspenseQuery(teamScopeQuery)
   const params = { month: search.month ?? null, teamId: search.team ?? null }
   const q = useQuery({ ...signoffOverviewQuery(params), placeholderData: keepPreviousData })
-  const ov = q.data!
+  const ov = q.data
+  if (!ov) throw new Error("sign-off overview not loaded")
   const month = ov.month
   const monthLabel = fmtMonth(month, intl)
   const history = useQuery({ ...signoffsQuery({ month }), placeholderData: keepPreviousData })
@@ -145,7 +146,9 @@ export function SignoffPage({
       return next
     })
 
+  const allSigned = ov.rows.length > 0 && ov.rows.every((r) => r.signoff || signing.has(r.user.id))
   const columns = [
+    // kept in a fully signed month too, so the columns line up when switching months
     col.display({
       id: "select",
       header: () =>
@@ -157,7 +160,7 @@ export function SignoffPage({
             aria-label={t("signoff.select_all")}
           />
         ) : null,
-      meta: { className: "w-10", hideOnMobile: true },
+      meta: { hideOnMobile: true, width: "2.75rem" },
       cell: (c) =>
         ready(c.row.original) && !signing.has(c.row.original.user.id) ? (
           <Checkbox
@@ -170,7 +173,7 @@ export function SignoffPage({
     col.accessor((r) => r.user.name, {
       id: "name",
       header: () => t("common.name"),
-      meta: { primary: true },
+      meta: { primary: true, width: "13rem" },
       cell: (c) => {
         const r = c.row.original
         return (
@@ -204,39 +207,40 @@ export function SignoffPage({
     col.accessor((r) => r.summary.targetMin, {
       id: "target",
       header: () => t("reports.target"),
-      meta: { numeric: true, mobileLabel: t("reports.target") },
+      meta: { numeric: true, mobileLabel: t("reports.target"), width: "6.5rem" },
       cell: (c) => fmtMinutes(c.getValue()),
     }),
     col.accessor((r) => r.summary.workedCompleteMin, {
       id: "worked",
       header: () => t("reports.worked"),
-      meta: { numeric: true, mobileLabel: t("reports.worked") },
+      meta: { numeric: true, mobileLabel: t("reports.worked"), width: "6.5rem" },
       cell: (c) => fmtMinutes(c.getValue()),
     }),
     col.accessor((r) => r.summary.deltaMin, {
       id: "delta",
       header: () => t("reports.delta"),
-      meta: { numeric: true, mobileLabel: t("reports.delta") },
+      meta: { numeric: true, mobileLabel: t("reports.delta"), width: "6.5rem" },
       cell: (c) => <Duration minutes={c.getValue()} balance />,
     }),
     col.display({
       id: "status",
       header: () => t("common.status"),
-      meta: { mobileLabel: t("common.status") },
+      meta: { mobileLabel: t("common.status"), width: "14rem" },
       cell: (c) => <Status r={c.row.original} signing={signing.has(c.row.original.user.id)} />,
     }),
-    col.display({
-      id: "actions",
-      header: () => <span className="sr-only">{t("signoff.reopen")}</span>,
-      meta: { className: "w-24 text-right" },
-      cell: (c) =>
-        c.row.original.signoff && me.isHr ? (
-          <Button intent="negative" variant="ghost" size="sm" onClick={() => setReopen(c.row.original.signoff)}>
-            {t("signoff.reopen")}
-          </Button>
-        ) : null,
-    }),
-  ]
+    me.isHr &&
+      col.display({
+        id: "actions",
+        header: () => <span className="sr-only">{t("signoff.reopen")}</span>,
+        meta: { className: "text-right", width: "8rem" },
+        cell: (c) =>
+          c.row.original.signoff ? (
+            <Button intent="negative" variant="ghost" size="sm" onClick={() => setReopen(c.row.original.signoff)}>
+              {t("signoff.reopen")}
+            </Button>
+          ) : null,
+      }),
+  ].filter((c) => c !== false)
 
   const onSign = () => {
     if (!chosen.length) {
@@ -285,10 +289,12 @@ export function SignoffPage({
       <Section
         title={t("signoff.people", { month: monthLabel })}
         actions={
-          <Button onClick={onSign}>
-            <Lock data-icon="inline-start" />
-            {chosen.length ? t("signoff.sign_selected", { count: chosen.length }) : t("signoff.sign")}
-          </Button>
+          allSigned ? null : (
+            <Button onClick={onSign}>
+              <Lock data-icon="inline-start" />
+              {chosen.length ? t("signoff.sign_selected", { count: chosen.length }) : t("signoff.sign")}
+            </Button>
+          )
         }
       >
         <PeriodContent className={q.isPlaceholderData ? "opacity-60" : undefined}>

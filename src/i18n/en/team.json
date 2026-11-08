@@ -58,7 +58,6 @@
   "now": "Now",
   "off": "Not in",
   "working_since": "In since {time}",
-  "break_since": "Break since {time}",
   "worked_target": "Worked / target",
   "signoff": "Sign-off",
   "not_signed": "Open",

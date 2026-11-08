@@ -134,7 +134,7 @@
     "reject_title": "Refuser la demande",
     "reject_title_n": "Refuser {count} demandes",
     "decision_note": "Remarque",
-    "decision_note_help": "Facultatif, envoyée à la personne",
+    "decision_note_help": "Facultatif, envoyée à la personne. Pas de données de santé.",
     "vacation_after": "Ensuite {n} restants",
     "vacation_left": "Vacances restantes",
     "exceeds": "Dépasse les vacances",

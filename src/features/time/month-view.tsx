@@ -59,9 +59,9 @@ export function MonthView({ view, onPick }: { view: PeriodView; onPick: (date: s
                     {Number(d.date.slice(8))}
                   </span>
                   <span className="flex items-center gap-1">
-                    {!d.worklogOk ? (
+                    {!d.projectOk ? (
                       <span className="size-1.5 rounded-full bg-warning">
-                        <span className="sr-only">{t("worklog.day_missing")}</span>
+                        <span className="sr-only">{t("time.project_missing")}</span>
                       </span>
                     ) : null}
                     {d.running ? (
@@ -112,9 +112,9 @@ export function MonthView({ view, onPick }: { view: PeriodView; onPick: (date: s
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <DayChips day={d} compact={d.absences.length + (d.holiday ? 1 : 0) > 1} />
                   {findings.length ? <FindingsBadge findings={findings} plain /> : null}
-                  {!d.worklogOk ? (
+                  {!d.projectOk ? (
                     <span className="size-1.5 rounded-full bg-warning">
-                      <span className="sr-only">{t("worklog.day_missing")}</span>
+                      <span className="sr-only">{t("time.project_missing")}</span>
                     </span>
                   ) : null}
                   <LockMark lock={view.lockedMonths[d.date.slice(0, 7)]} className="size-3" />

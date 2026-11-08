@@ -28,5 +28,7 @@
   "custom_time": "Altra ora",
   "scheduled": "Uscita timbrata automaticamente alle {time}",
   "scheduled_short": "fino alle {time}",
-  "cancel_scheduled": "Annulla"
+  "cancel_scheduled": "Annulla",
+  "project": "Progetto",
+  "next_project": "Timbrare su"
 }

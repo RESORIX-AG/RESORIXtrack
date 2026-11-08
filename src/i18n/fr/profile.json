@@ -67,7 +67,8 @@
     "oidc_no_account": "SSO : aucun compte",
     "oidc_unverified": "SSO : e-mail non vérifié",
     "setup_code": "Mauvais code de configuration",
-    "reset_requested": "Réinitialisation demandée"
+    "reset_requested": "Réinitialisation demandée",
+    "mfa_required": "Mot de passe seul non autorisé"
   },
   "export_data": "Télécharger mes données",
   "passkeys": "Clés d'accès",
@@ -105,6 +106,6 @@
     "code_from_app": "Code de l'application",
     "code_format": "Saisis les 6 chiffres",
     "required_cannot_disable": "Obligatoire pour ton compte",
-    "banner": "L'authentification à deux facteurs est obligatoire pour ton compte."
+    "banner": "L'authentification à deux facteurs est obligatoire pour ton compte. Configure-la pour continuer."
   }
 }

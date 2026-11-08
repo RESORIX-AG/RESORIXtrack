@@ -48,6 +48,16 @@ export function minToHhmm(min: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
 }
 
+/**
+ * Times a new entry starts with: the given start, else the quarter hour nearest to now, and an hour later.
+ * Entries never end in the future, so on today an end after now is left empty for the person to pick.
+ */
+export function newEntryTimes(nowMin: number, today: boolean, start?: string): { start: string; end: string } {
+  const from = start ?? minToHhmm(Math.min(Math.round(nowMin / 15) * 15, 23 * 60 + 45))
+  const end = Math.min(hhmmToMin(from) + 60, 23 * 60 + 59)
+  return { start: from, end: today && end > nowMin ? "" : minToHhmm(end) }
+}
+
 /** The instant (ISO, UTC) of a local wall-clock time in `tz` (DST gaps resolve forward). */
 export function wallToInstant(date: string, hhmm: string, tz: string): string {
   const [y, mo, d] = date.split("-").map(Number)

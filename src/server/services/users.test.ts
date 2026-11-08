@@ -43,6 +43,19 @@ function addPasskey(userId: number, id: string) {
 }
 const passkeysOf = (userId: number) => db.select().from(s.passkey).where(eq(s.passkey.userId, userId)).all().length
 
+/** A password reset link as Better Auth stores it (identifier hashed, value the user id). */
+function resetLink(userId: number) {
+  db.insert(s.verification)
+    .values({ identifier: `hashed-${userId}`, value: String(userId), expiresAt: new Date(Date.now() + 1e6) })
+    .run()
+}
+const resetLinksOf = (userId: number) =>
+  db
+    .select()
+    .from(s.verification)
+    .where(eq(s.verification.value, String(userId)))
+    .all().length
+
 describe("users administration", () => {
   it("handles passkeys separately from two-factor; deactivation removes them", () => {
     const admin = loadActor(makeAdmin().id)
@@ -142,6 +155,12 @@ describe("users administration", () => {
     makeUser({ name: "Old", isActive: false })
     expect(listUsers(admin, { teamId: team.id }).map((u) => u.name)).toEqual(["Lea"])
     expect(listUsers(admin, { role: "lead" }).map((u) => u.name)).toEqual(["Lea"])
+    const deputy = makeUser({ name: "Dina", teamId: team.id })
+    makeLead(team.id, deputy.id, { role: "deputy" })
+    expect(listUsers(admin, { role: "lead" }).map((u) => [u.name, u.isDeputy])).toEqual([
+      ["Dina", true],
+      ["Lea", false],
+    ])
     expect(listUsers(admin, { role: "hr" }).map((u) => u.name)).toEqual(["Hans"])
     expect(listUsers(admin, { status: "inactive" }).map((u) => u.name)).toEqual(["Old"])
     expect(listUsers(admin, { q: "HAN" }).map((u) => u.name)).toEqual(["Hans"])
@@ -151,15 +170,18 @@ describe("users administration", () => {
     const admin = loadActor(makeAdmin().id)
     const u = makeUser({ employmentStart: "2025-01-01" })
     signOff(u.id, "2026-01", "2026-01-01", "2026-01-31")
-    expect(() => updateUser(admin, u.id, { employmentStart: "2025-06-01" })).toThrow(/signed-off/)
+    expect(() => updateUser(admin, u.id, { employmentStart: "2026-01-10" })).toThrow(/signed-off/)
     expect(() => updateUser(admin, u.id, { employmentEnd: "2026-01-15" })).toThrow(/signed-off/)
+    // only the days that change count: moving the start within 2025 leaves January 2026 alone
+    expect(updateUser(admin, u.id, { employmentStart: "2025-06-01" }).employmentStart).toBe("2025-06-01")
+    expect(updateUser(admin, u.id, { employmentStart: "2025-01-01" }).employmentStart).toBe("2025-01-01")
     // an end after the signed month leaves it untouched (service and database guard agree)
     expect(updateUser(admin, u.id, { employmentEnd: "2026-06-30" }).employmentEnd).toBe("2026-06-30")
     expect(() => rawSqlite().prepare("UPDATE users SET employment_end = '2026-01-10' WHERE id = ?").run(u.id)).toThrow(
       /period signed off/,
     )
     expect(() =>
-      rawSqlite().prepare("UPDATE users SET employment_start = '2025-02-01' WHERE id = ?").run(u.id),
+      rawSqlite().prepare("UPDATE users SET employment_start = '2026-01-20' WHERE id = ?").run(u.id),
     ).toThrow(/period signed off/)
   })
 
@@ -187,6 +209,17 @@ describe("users administration", () => {
     )
     expect(db.select().from(s.teamLeads).where(eq(s.teamLeads.userId, u.id)).all()).toHaveLength(0)
     expect(setActive(admin, u.id, true).isActive).toBe(true)
+  })
+
+  it("an email change ends pending password reset links, stored under a hashed identifier", () => {
+    const admin = loadActor(makeAdmin().id)
+    const u = makeUser()
+    const other = makeUser()
+    resetLink(u.id)
+    resetLink(other.id)
+    updateUser(admin, u.id, { email: "moved@example.nomail" })
+    expect(resetLinksOf(u.id)).toBe(0)
+    expect(resetLinksOf(other.id)).toBe(1)
   })
 
   it("sets a password (revoking sessions) and resets two-factor", () => {

@@ -3,7 +3,7 @@
  * is fetched when a chart first renders. The fallback reserves the chart's height (no layout jump).
  * Add new charts to ./charts-impl.tsx (conventions there) and a lazy wrapper here.
  */
-import { type ComponentProps, lazy, type ReactNode, Suspense } from "react"
+import { type ComponentProps, lazy, type ReactNode, Suspense, useSyncExternalStore } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import type * as Impl from "./charts-impl"
@@ -23,6 +23,8 @@ export interface LegendItem {
   dashed?: boolean
 }
 
+const noSubscribe = () => () => {}
+
 export function ChartFrame({
   children,
   className,
@@ -34,9 +36,16 @@ export function ChartFrame({
   srTable?: ReactNode
   legend?: readonly LegendItem[]
 }) {
+  // the server lays the SVG out for a default width, so until hydration measures the container it would show
+  // squeezed and then snap to size: it keeps its space but stays hidden until it has its real width
+  const hydrated = useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
+  )
   return (
     <figure className={cn("rt-chart m-0", className)}>
-      {children}
+      <div className={hydrated ? undefined : "invisible"}>{children}</div>
       {legend?.length ? (
         <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {legend.map((l) => (

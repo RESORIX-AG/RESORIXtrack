@@ -67,6 +67,16 @@ export const Person = named(
 
 // ------------------------------------------------------------------ time
 
+export const Project = named(
+  "Project",
+  z.object({ id, name: z.string(), code: z.string(), color: z.string().meta({ description: "#rrggbb" }) }),
+)
+
+/** What an entry's time was spent on (inputs). */
+export const projectFields = {
+  projectId: id.nullish().meta({ description: "A project from GET /projects; null clears it." }),
+}
+
 export const Entry = named(
   "Entry",
   z.object({
@@ -80,6 +90,8 @@ export const Entry = named(
     minutes,
     tz: z.string(),
     note: z.string(),
+    projectId: id.nullable(),
+    project: z.object({ id, name: z.string(), code: z.string(), color: z.string(), isActive: z.boolean() }).nullable(),
     source: z.enum(["clock", "manual", "api", "desktop", "offline"]),
     edited: z.boolean(),
     corrected: z.boolean().meta({ description: "Created or changed by someone else (lead, HR)." }),
@@ -93,7 +105,7 @@ export const ClockState = named(
   "ClockState",
   z.object({
     state: z.enum(["idle", "working"]),
-    since: instant.nullable(),
+    since: instant.nullable().meta({ description: "Start of the running entry." }),
     scheduledEnd: instant.nullable().meta({ description: "Scheduled clock-out of the running entry, if any." }),
     entry: Entry.nullable(),
     todayWorkedMin: minutes,
@@ -148,9 +160,8 @@ export const Day = named(
     absences: z.array(DayAbsence),
     warnings: z.array(z.string()),
     edited: z.boolean(),
-    worklogMin: minutes,
-    worklogRequiredMin: minutes,
-    worklogOk: z.boolean(),
+    projectMin: minutes.meta({ description: "Worked minutes with a project." }),
+    projectOk: z.boolean().meta({ description: "False on a past day with work without a project (required mode)." }),
   }),
 )
 
@@ -297,9 +308,8 @@ const TimesheetEntry = z.object({
   edited: z.boolean(),
   note: z.string(),
 })
-const TimesheetWork = z.object({
+const TimesheetProjectTime = z.object({
   project: z.string().nullable(),
-  customerRef: z.string(),
   note: z.string(),
   minutes,
   start: z.string().nullable(),
@@ -314,7 +324,9 @@ export const Timesheet = named(
     month: z.number().int(),
     days: z.array(Day),
     entries: z.record(z.string(), z.array(TimesheetEntry)).meta({ description: "Per local day." }),
-    worklog: z.record(z.string(), z.array(TimesheetWork)),
+    projectTime: z
+      .record(z.string(), z.array(TimesheetProjectTime))
+      .meta({ description: "Per local day: time on projects." }),
     summary: Summary,
     balanceBeforeMin: minutes,
     balanceAfterMin: minutes,

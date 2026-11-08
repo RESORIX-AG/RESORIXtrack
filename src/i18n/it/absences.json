@@ -134,7 +134,7 @@
     "reject_title": "Rifiuta richiesta",
     "reject_title_n": "Rifiuta {count} richieste",
     "decision_note": "Nota",
-    "decision_note_help": "Facoltativa, inviata alla persona",
+    "decision_note_help": "Facoltativa, inviata alla persona. Nessun dato sanitario.",
     "vacation_after": "Poi restano {n}",
     "vacation_left": "Vacanze rimanenti",
     "exceeds": "Supera le vacanze",

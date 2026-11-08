@@ -58,7 +58,6 @@
   "now": "Ora",
   "off": "Non presente",
   "working_since": "Presente dalle {time}",
-  "break_since": "In pausa dalle {time}",
   "worked_target": "Lavorato / previsto",
   "signoff": "Firma",
   "not_signed": "Aperto",

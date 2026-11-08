@@ -39,8 +39,8 @@ function Presence({ m }: { m: Member }) {
   if (m.presence.state !== "off") {
     const since = fmtTime(m.presence.since, { intl: i.intl, tz: me.timezone, hour12: me.timeFormat === "12h" })
     return (
-      <StatusBadge tone={m.presence.state === "working" ? "positive" : "warning"} icon="dot">
-        {i.t(m.presence.state === "working" ? "team.working_since" : "team.break_since", { time: since })}
+      <StatusBadge tone="positive" icon="dot">
+        {i.t("team.working_since", { time: since })}
       </StatusBadge>
     )
   }
@@ -108,8 +108,8 @@ export function TeamOverviewPage({
   const navigate = useNavigate()
   const { data: scope } = useSuspenseQuery(teamScopeQuery)
   const params = { teamId: search.team ?? null, month: search.month ?? null }
-  const { data, isPlaceholderData } = useQuery({ ...teamOverviewQuery(params), placeholderData: keepPreviousData })
-  const ov = data!
+  const { data: ov, isPlaceholderData } = useQuery({ ...teamOverviewQuery(params), placeholderData: keepPreviousData })
+  if (!ov) throw new Error("team overview not loaded")
   const currentMonth = ov.today.slice(0, 7)
   const [calMonth, setCalMonth] = useState(currentMonth)
   const [calendarPending, startCalendar] = useTransition()

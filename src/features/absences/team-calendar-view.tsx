@@ -9,7 +9,7 @@ import { AbsenceCalendar, CalendarLegend } from "@/components/app/absence-calend
 import type { CalendarCell, CalendarMark } from "@/components/app/absence-calendar-cells"
 import { PeriodContent, PeriodNav } from "@/components/app/period-nav"
 import { ColorDot } from "@/components/app/status-badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { teamCalendarQuery } from "@/features/team/api"
 import { addMonthsStr, fmtDay, fmtMonth, initials, monthRange } from "@/lib/format"
@@ -81,7 +81,16 @@ export function TeamCalendarView({
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {onTeam && cal.teams.length > 1 ? (
+          <Combobox
+            className="mr-auto h-8 w-auto min-w-40"
+            aria-label={t("common.team")}
+            options={teamItems}
+            value={teamId ? String(teamId) : "all"}
+            onChange={(v) => onTeam(v === "all" || v == null ? null : Number(v))}
+          />
+        ) : null}
         <PeriodNav
           label={fmtMonth(month, intl)}
           onPrev={() => onMonth(addMonthsStr(month, -1))}
@@ -90,24 +99,6 @@ export function TeamCalendarView({
           isCurrent={month === today.slice(0, 7)}
           startTransition={startTransition}
         />
-        {onTeam && cal.teams.length > 1 ? (
-          <Select
-            items={teamItems}
-            value={teamId ? String(teamId) : "all"}
-            onValueChange={(v) => onTeam(v === "all" || v == null ? null : Number(v))}
-          >
-            <SelectTrigger size="sm" className="min-w-40" aria-label={t("common.team")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {teamItems.map((x) => (
-                <SelectItem key={x.value} value={x.value}>
-                  {x.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
       </div>
 
       {!cal.rows.length ? (

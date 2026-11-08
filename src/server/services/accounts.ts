@@ -13,13 +13,13 @@
  *   extraCredit     max(0, holidayCredit + absenceCredit - scheduled)   (prorata only)
  *   sunday/holiday/night work   minutes in the legal windows (ArG Art. 16, 18, 20a): Saturday 23:00 to
  *                   Sunday 23:00, the eve 23:00 to 23:00 on a full holiday (12:00 on a half day), 23:00 to 06:00
- *   surcharge       time_credit mode only: worked on a public holiday x surcharge % x holiday half-days / 2 (as v1)
+ *   surcharge       time_credit mode only: (Sunday + holiday work) x surcharge %
  *   nightCredit     regular night work only: night work x 10 % (Art. 17b para. 2)
  *   delta           worked - target + extraCredit + surcharge + nightCredit (0 for future days)
  *
  * A period is loaded in a handful of indexed queries (`loadContext`) and computed in memory.
  */
-import { and, asc, eq, gte, inArray, isNull, lt, lte, min, sum } from "drizzle-orm"
+import { and, asc, eq, gte, inArray, isNull, lt, lte, min, ne } from "drizzle-orm"
 import { db } from "../db"
 import {
   type Absence,
@@ -35,18 +35,19 @@ import {
   users,
   vacationEntitlements,
   type WorkSchedule,
-  workLogs,
   workSchedules,
 } from "../db/schema"
 import { Forbidden, NotFound, Validation } from "../errors"
-import { addDays, localToday, nowInstant, zone } from "../time"
+import { addDays, instantOfMs, localToday, nowInstant, zone } from "../time"
+import { maxDay, minDay } from "./absences.schemas"
 import { type Half, holidayHalves, holidaysFor } from "./holidays"
 import { ensureOpenDates } from "./locks"
 import { notify } from "./notifications"
-import { type Actor, canAdjustBalance, requireView } from "./permissions"
+import { type Actor, beforeCover, canAdjustBalance, requireDate, requireView, seesDate } from "./permissions"
 import { record, snapshot } from "./revisions"
 import { minutesOnWeekday, schedulesOf, workdaysPerWeek } from "./schedules"
-import { getAllSettings, type Settings } from "./settings"
+import { type Settings, type SettingsTimeline, settingsTimeline } from "./settings"
+import { dayStartsMs, type PersonTimeline, personTimeline } from "./timeline"
 
 export interface DayAbsence {
   id: number
@@ -88,9 +89,10 @@ export interface Day {
   absences: DayAbsence[]
   warnings: string[] // break_too_short | outside_employment (compliance findings come from compliance.ts)
   edited: boolean
-  worklogMin: number
-  worklogRequiredMin: number
-  worklogOk: boolean
+  /** Worked minutes with a project. */
+  projectMin: number
+  /** False on a past day with work without a project while projects are required. */
+  projectOk: boolean
 }
 
 export interface Summary {
@@ -167,27 +169,6 @@ const epochDay = (d: string): number => Date.parse(d) / DAY_MS
 const dayOfEpoch = (n: number): string => new Date(n * DAY_MS).toISOString().slice(0, 10)
 const weekdayOfEpoch = (n: number): number => (((n + 3) % 7) + 7) % 7
 const r2 = (x: number): number => Math.round(x * 100) / 100
-const maxDay = (a: string, b: string): string => (a > b ? a : b)
-const minDay = (a: string, b: string): string => (a < b ? a : b)
-
-/** Python's round() for .5 cases (banker's rounding), so entitlements match v1. */
-function roundHalfEven(x: number): number {
-  const f = Math.floor(x)
-  const diff = x - f
-  if (Math.abs(diff - 0.5) < 1e-9) return f % 2 === 0 ? f : f + 1
-  return Math.round(x)
-}
-
-/** Start instants (epoch ms) of `count` consecutive local days from `start` (handles 23 h / 25 h days). */
-export function dayStartsMs(start: string, count: number, tz: string): number[] {
-  const out: number[] = []
-  let d = Temporal.PlainDate.from(start)
-  for (let i = 0; i < count; i++) {
-    out.push(d.toZonedDateTime({ timeZone: tz }).epochMilliseconds)
-    d = d.add({ days: 1 })
-  }
-  return out
-}
 
 /** Index of the last element <= x (or -1). */
 function floorIndex(sorted: number[], x: number): number {
@@ -218,31 +199,42 @@ export function absenceHalves(
   return ["am", "pm"]
 }
 
-export function isEmployed(user: Pick<User, "employmentStart" | "employmentEnd">, d: string): boolean {
-  if (user.employmentStart && d < user.employmentStart) return false
-  return !(user.employmentEnd && d > user.employmentEnd)
-}
-
 function createdDay(user: User): string {
   const ms = user.createdAt instanceof Date ? user.createdAt.getTime() : Number(user.createdAt)
   return Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(zone(user.timezone)).toPlainDate().toString()
 }
 
-/** First day the accounts run from (employment start or first schedule). */
-export function accountStart(user: User): string {
-  if (user.employmentStart) return user.employmentStart
-  const first = db
+/** First day the accounts run from (start of the first employment period, else the first schedule). */
+export function accountStart(user: User, timeline: PersonTimeline = personTimeline(user)): string {
+  const first = timeline.periods[0].start
+  if (first) return first
+  const firstSchedule = db
     .select({ d: min(workSchedules.validFrom) })
     .from(workSchedules)
     .where(eq(workSchedules.userId, user.id))
     .get()?.d
   const created = createdDay(user)
-  return first ? minDay(first, created) : created
+  return firstSchedule ? minDay(firstSchedule, created) : created
+}
+
+/**
+ * Earliest year the accounts hold anything for: the account start or an earlier booking (an opening balance),
+ * never before `visibleFrom` (a lead sees their team from the day they took it over).
+ */
+export function firstAccountYear(user: User, visibleFrom: string | null = null): number {
+  const booked = db
+    .select({ d: min(balanceAdjustments.effectiveDate) })
+    .from(balanceAdjustments)
+    .where(and(eq(balanceAdjustments.userId, user.id), eq(balanceAdjustments.isDeleted, false)))
+    .get()?.d
+  const start = accountStart(user)
+  const first = booked ? minDay(booked, start) : start
+  return Number((visibleFrom ? maxDay(first, visibleFrom) : first).slice(0, 4))
 }
 
 // ------------------------------------------------------------------ data context
 
-export type ContextEntry = Pick<TimeEntry, "id" | "kind" | "startAt" | "endAt" | "source">
+export type ContextEntry = Pick<TimeEntry, "id" | "kind" | "startAt" | "endAt" | "source" | "projectId">
 
 export interface AccountContext {
   user: User
@@ -254,21 +246,34 @@ export interface AccountContext {
   absences: Absence[]
   types: Map<number, AbsenceType>
   entries: ContextEntry[]
+  /** Today's settings (non-figure keys); `settingsAt` for the figure-changing ones of a day. */
   settings: Settings
+  settingsAt: (date: string) => Settings
+  /** Days a versioned setting changes on, ascending. */
+  settingChanges: readonly string[]
+  timeline: PersonTimeline
   nowMs: number
   today: string
-  worklogMinutes: Map<string, number>
 }
 
-export interface ContextOptions {
+/** Timelines built once and passed along (a loop over many people builds the settings timeline once). */
+export interface Prebuilt {
+  timeline?: PersonTimeline
+  settings?: SettingsTimeline
+}
+
+export interface ContextOptions extends Prebuilt {
   includePending?: boolean
   /** Skip loading time entries (vacation figures only). */
   entries?: boolean
-  worklog?: boolean
+  /** Leave out one absence, e.g. the request being edited in a preview. */
+  excludeAbsenceId?: number
 }
 
 export function loadContext(user: User, start: string, end: string, opts: ContextOptions = {}): AccountContext {
   const tz = zone(user.timezone)
+  const timeline = opts.timeline ?? personTimeline(user)
+  const dayTz = timeline.earlier.length ? timeline.tzOn : tz
   const includePending = opts.includePending ?? true
   const states: ("approved" | "pending")[] = includePending ? ["approved", "pending"] : ["approved"]
   const absenceRows = db
@@ -280,6 +285,7 @@ export function loadContext(user: User, start: string, end: string, opts: Contex
         lte(absences.startDate, end),
         gte(absences.endDate, start),
         inArray(absences.status, states),
+        opts.excludeAbsenceId != null ? ne(absences.id, opts.excludeAbsenceId) : undefined,
       ),
     )
     .orderBy(asc(absences.startDate), asc(absences.id))
@@ -293,10 +299,11 @@ export function loadContext(user: User, start: string, end: string, opts: Contex
   )
   let entries: ContextEntry[] = []
   if (opts.entries !== false) {
-    const [sUtc] = dayBoundsIso(start, tz)
-    const [, eUtc] = dayBoundsIso(end, tz)
+    const [startMs] = dayStartsMs(start, 1, dayTz)
+    const [endMs] = dayStartsMs(addDays(end, 1), 1, dayTz)
+    const eUtc = instantOfMs(endMs)
     // entries never exceed 24 h, so starting a day earlier catches every entry that reaches into the range
-    const from = new Date(Date.parse(sUtc) - DAY_MS).toISOString().replace("Z", "000Z")
+    const from = instantOfMs(startMs - DAY_MS)
     entries = db
       .select({
         id: timeEntries.id,
@@ -304,6 +311,7 @@ export function loadContext(user: User, start: string, end: string, opts: Contex
         startAt: timeEntries.startAt,
         endAt: timeEntries.endAt,
         source: timeEntries.source,
+        projectId: timeEntries.projectId,
       })
       .from(timeEntries)
       .where(
@@ -324,60 +332,41 @@ export function loadContext(user: User, start: string, end: string, opts: Contex
         startAt: timeEntries.startAt,
         endAt: timeEntries.endAt,
         source: timeEntries.source,
+        projectId: timeEntries.projectId,
       })
       .from(timeEntries)
       .where(and(eq(timeEntries.userId, user.id), isNull(timeEntries.endAt), eq(timeEntries.isDeleted, false)))
       .get()
     if (open && open.startAt < from) entries.unshift(open)
   }
-  const worklogMinutes = new Map<string, number>()
-  if (opts.worklog !== false) {
-    const rows = db
-      .select({ date: workLogs.date, minutes: sum(workLogs.minutes) })
-      .from(workLogs)
-      .where(
-        and(
-          eq(workLogs.userId, user.id),
-          gte(workLogs.date, start),
-          lte(workLogs.date, end),
-          eq(workLogs.isDeleted, false),
-        ),
-      )
-      .groupBy(workLogs.date)
-      .all()
-    for (const r of rows) worklogMinutes.set(r.date, Number(r.minutes ?? 0))
-  }
   const now = nowInstant()
+  const settings = opts.settings ?? settingsTimeline()
+  const today = now.toZonedDateTimeISO(tz).toPlainDate().toString()
   return {
     user,
     start,
     end,
     tz,
     schedules: schedulesOf(user.id),
-    holidays: holidaysFor(user, start, end),
+    holidays: holidaysFor(user, start, end, timeline.earlier),
     absences: absenceRows,
     types,
     entries,
-    settings: getAllSettings(),
+    settings: settings.at(today),
+    settingsAt: settings.at,
+    settingChanges: settings.changes,
+    timeline,
     nowMs: now.epochMilliseconds,
-    today: now.toZonedDateTimeISO(tz).toPlainDate().toString(),
-    worklogMinutes,
+    today,
   }
-}
-
-function dayBoundsIso(d: string, tz: string): [string, string] {
-  const pd = Temporal.PlainDate.from(d)
-  const a = pd.toZonedDateTime({ timeZone: tz }).toInstant().toString({ smallestUnit: "microsecond" })
-  const b = pd.add({ days: 1 }).toZonedDateTime({ timeZone: tz }).toInstant().toString({ smallestUnit: "microsecond" })
-  return [a, b]
 }
 
 // ------------------------------------------------------------------ day computation
 
-interface Segment {
+interface Segment<E = ContextEntry> {
   a: number
   b: number
-  e: ContextEntry
+  e: E
 }
 
 export interface ComputeOptions {
@@ -387,9 +376,13 @@ export interface ComputeOptions {
 }
 
 /** Splits entries into per-day segments at local midnight. `starts` has one more element than days. */
-export function segmentsByDay(entries: ContextEntry[], starts: number[], nowMs: number): Segment[][] {
+export function segmentsByDay<E extends Pick<ContextEntry, "startAt" | "endAt">>(
+  entries: E[],
+  starts: number[],
+  nowMs: number,
+): Segment<E>[][] {
   const n = starts.length - 1
-  const out: Segment[][] = Array.from({ length: n }, () => [])
+  const out: Segment<E>[][] = Array.from({ length: n }, () => [])
   for (const e of entries) {
     const s = Date.parse(e.startAt)
     const en = e.endAt ? Date.parse(e.endAt) : nowMs
@@ -404,20 +397,12 @@ export function segmentsByDay(entries: ContextEntry[], starts: number[], nowMs: 
 }
 
 export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}): Day[] {
-  const { user, settings: st } = ctx
+  const { timeline } = ctx
   const e0 = epochDay(ctx.start)
   const n = epochDay(ctx.end) - e0 + 1
   if (!(n > 0)) return []
-  const prorata = st.holiday_mode === "prorata"
-  const ftDaily = st.fulltime_weekly_minutes / 5
-  // the time credit is a company/GAV rule; the night credit a legal one (ArG Art. 17b para. 2)
-  const surchargePct =
-    st.holiday_work_surcharge_mode === "time_credit" && !user.argExempt ? st.holiday_work_surcharge_percent || 0 : 0
-  const nightCredit = st.compliance_enabled && !user.argExempt && user.regularNightWork ? NIGHT_CREDIT : 0
   const edited = opts.editedEntryIds
-  // breaks are a legal minimum (ArG Art. 15) wherever the ArG applies
-  const breakCheck = st.compliance_enabled && !user.argExempt && user.recordingMode !== "waived"
-  const starts = dayStartsMs(ctx.start, n + 1, ctx.tz)
+  const starts = dayStartsMs(ctx.start, n + 1, timeline.earlier.length ? timeline.tzOn : ctx.tz)
   const segs = segmentsByDay(ctx.entries, starts, ctx.nowMs)
 
   const absByDay: Absence[][] = Array.from({ length: n }, () => [])
@@ -427,16 +412,25 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
     for (let i = from; i <= to; i++) absByDay[i].push(a)
   }
 
-  const required = st.worklog_mode === "required"
-  const pct = st.worklog_required_percent || 0
+  const projectsRequired = ctx.settings.project_mode === "required"
   const days: Day[] = []
   let si = -1
   for (let i = 0; i < n; i++) {
     const date = dayOfEpoch(e0 + i)
     const wd = weekdayOfEpoch(e0 + i)
+    const st = ctx.settingsAt(date)
+    const terms = timeline.termsOn(date)
+    const prorata = st.holiday_mode === "prorata"
+    const ftDaily = st.fulltime_weekly_minutes / 5
+    // the time credit is a company/GAV rule; the night credit a legal one (ArG Art. 17b para. 2)
+    const surchargePct =
+      st.holiday_work_surcharge_mode === "time_credit" && !terms.argExempt ? st.holiday_work_surcharge_percent || 0 : 0
+    const nightCredit = st.compliance_enabled && !terms.argExempt && terms.regularNightWork ? NIGHT_CREDIT : 0
+    // breaks are a legal minimum (ArG Art. 15) wherever the ArG applies and start and end times are recorded
+    const breakCheck = st.compliance_enabled && !terms.argExempt && terms.recordingMode === "full"
     while (si + 1 < ctx.schedules.length && ctx.schedules[si + 1].validFrom <= date) si++
     const sched = si >= 0 ? ctx.schedules[si] : null
-    const employed = isEmployed(user, date)
+    const employed = timeline.employedOn(date)
     const scheduled = sched && employed ? minutesOnWeekday(sched, wd) : 0
     const pensum = (sched ? sched.pensumPercent : 100) / 100
     const day: Day = {
@@ -467,9 +461,8 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
       absences: [],
       warnings: [],
       edited: false,
-      worklogMin: ctx.worklogMinutes.get(date) ?? 0,
-      worklogRequiredMin: 0,
-      worklogOk: true,
+      projectMin: 0,
+      projectOk: true,
     }
 
     const hol = ctx.holidays.get(date)
@@ -484,6 +477,7 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
     }
 
     const covered = new Set<Half>(holH)
+    let sickCredit = 0
     for (const a of absByDay[i]) {
       const halves = absenceHalves(a, date)
       if (!halves.length) continue
@@ -501,25 +495,34 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
       })
       if (!effective.length || !employed) continue
       for (const h of effective) covered.add(h)
-      if (t?.creditsTime && scheduled > 0) day.absenceCreditMin += (scheduled * effective.length) / 2
+      if (t?.creditsTime && scheduled > 0) {
+        const credit = (scheduled * effective.length) / 2
+        if (t.category === "sick") sickCredit += credit
+        else day.absenceCreditMin += credit
+      }
       if (t?.deductsVacation && scheduled > 0) day.vacationDays += effective.length / 2
     }
 
     const daySegs = segs[i]
+    let unassignedMs = 0
     if (daySegs.length) {
       daySegs.sort((x, y) => x.a - y.a)
       let first = Number.POSITIVE_INFINITY
       let last = Number.NEGATIVE_INFINITY
       let workedMs = 0
+      let projectMs = 0
       for (const s of daySegs) {
         if (s.e.endAt == null) day.running = true
         if (s.e.source === "manual" || edited?.has(s.e.id)) day.edited = true
         if (s.e.kind !== "work") continue
         workedMs += s.b - s.a
+        if (s.e.projectId != null) projectMs += s.b - s.a
+        else unassignedMs += s.b - s.a
         if (s.a < first) first = s.a
         if (s.b > last) last = s.b
       }
       day.workedMin = workedMs / 60000
+      day.projectMin += projectMs / 60000
       if (workedMs > 0) {
         day.firstStart = new Date(first).toISOString()
         day.lastEnd = new Date(last).toISOString()
@@ -530,7 +533,7 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
           wd,
           starts[i],
           starts[i + 1],
-          ctx.tz,
+          terms.timezone,
           hol,
           ctx.holidays.get(addDays(date, 1)),
         )
@@ -540,12 +543,17 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
       }
     }
 
+    // sick after part of the day: only what the schedule still lacks is credited, never more than the day
+    if (sickCredit)
+      sickCredit = Math.min(
+        sickCredit,
+        Math.max(0, scheduled - day.holidayCreditMin - day.absenceCreditMin - day.workedMin),
+      )
+    day.absenceCreditMin += sickCredit
     const credits = day.holidayCreditMin + day.absenceCreditMin
     day.targetMin = Math.max(0, scheduled - credits)
     day.extraCreditMin = Math.max(0, credits - scheduled)
-    // v1 formula, unchanged so imported and signed-off months keep their figures: public holidays only, the day's
-    // worked minutes x surcharge x holiday half-days / 2. Sunday hours are reported for payroll, not credited.
-    day.surchargeMin = holH.length && day.workedMin ? (day.workedMin * surchargePct * holH.length) / 200 : 0
+    day.surchargeMin = ((day.sundayWorkMin + day.holidayWorkMin) * surchargePct) / 100
     day.nightCreditMin = day.nightWorkMin * nightCredit
     day.deltaMin = day.isFuture
       ? 0
@@ -555,10 +563,7 @@ export function computeDaysFrom(ctx: AccountContext, opts: ComputeOptions = {}):
       day.warnings.push("break_too_short")
     }
     if (day.workedMin > 0 && !employed) day.warnings.push("outside_employment")
-    if (required && day.workedMin > 0) {
-      day.worklogRequiredMin = Math.ceil((day.workedMin * pct) / 100 - 1e-9)
-      day.worklogOk = date >= ctx.today || day.worklogMin >= day.worklogRequiredMin
-    }
+    if (projectsRequired && unassignedMs > 0 && date < ctx.today) day.projectOk = false
     days.push(opts.raw ? day : roundDay(day))
   }
   return days
@@ -631,6 +636,7 @@ function roundDay(d: Day): Day {
   d.surchargeMin = r2(d.surchargeMin)
   d.nightCreditMin = r2(d.nightCreditMin)
   d.deltaMin = r2(d.deltaMin)
+  d.projectMin = r2(d.projectMin)
   return d
 }
 
@@ -733,15 +739,17 @@ export function serializeAdjustment(a: BalanceAdjustment & { createdByName?: str
 // ------------------------------------------------------------------ time balance
 
 /** Balance through `asOf` (default: yesterday) and today's running delta. */
-export function timeBalance(user: User, asOf?: string): TimeBalance {
+export function timeBalance(user: User, asOf?: string, pre: Prebuilt = {}): TimeBalance {
   const today = localToday(user.timezone)
   const until = asOf ?? addDays(today, -1)
   const upto = maxDay(until, today)
-  const start = accountStart(user)
-  let balance = adjustmentRows(user.id, "time", upto).reduce((s, a) => s + a.amount, 0)
+  const timeline = pre.timeline ?? personTimeline(user)
+  const start = accountStart(user, timeline)
+  // the current balance includes today's bookings; a balance as of a past day none dated after it
+  let balance = adjustmentRows(user.id, "time", asOf ?? today).reduce((s, a) => s + a.amount, 0)
   let todayDelta = 0
   if (start <= today) {
-    const ctx = loadContext(user, start, upto, { includePending: false, worklog: false })
+    const ctx = loadContext(user, start, upto, { ...pre, timeline, includePending: false })
     for (const day of computeDaysFrom(ctx, { raw: true })) {
       if (day.date <= until) balance += day.deltaMin
       if (day.date === today) todayDelta = day.deltaMin
@@ -750,16 +758,44 @@ export function timeBalance(user: User, asOf?: string): TimeBalance {
   return { balanceMin: r2(balance), todayDeltaMin: r2(todayDelta), asOf: until }
 }
 
+/**
+ * Figures of [from, to], the balance through yesterday and the vacation account of `year`, from one load
+ * (team overview and balances report need all three for every person).
+ */
+export function personAccounts(user: User, from: string, to: string, year: number, pre: Prebuilt = {}) {
+  const timeline = pre.timeline ?? personTimeline(user)
+  const start = accountStart(user, timeline)
+  const today = localToday(user.timezone)
+  const until = addDays(today, -1)
+  const lo = minDay(minDay(start, `${Math.min(Number(start.slice(0, 4)), year)}-01-01`), from)
+  const hi = maxDay(maxDay(today, `${year}-12-31`), to)
+  const ctx = loadContext(user, lo, hi, { ...pre, timeline, includePending: true })
+  const days = computeDaysFrom(ctx, { raw: true })
+  let balance = adjustmentRows(user.id, "time", today).reduce((acc, a) => acc + a.amount, 0)
+  let todayDelta = 0
+  for (const day of days) {
+    if (day.date < start) continue
+    if (day.date <= until) balance += day.deltaMin
+    if (day.date === today) todayDelta = day.deltaMin
+  }
+  return {
+    days: days.filter((d) => d.date >= from && d.date <= to).map((d) => roundDay({ ...d })),
+    balance: { balanceMin: r2(balance), todayDeltaMin: r2(todayDelta), asOf: until } satisfies TimeBalance,
+    vacation: vacationFrom(user, timeline, year, ctx, days),
+  }
+}
+
 /** Bank-statement view of a year: opening balance, months, adjustments, closing balance (complete days only). */
 export function timeStatement(user: User, year: number): TimeStatement {
-  const start = accountStart(user)
+  const pre = { timeline: personTimeline(user), settings: settingsTimeline() }
+  const start = accountStart(user, pre.timeline)
   const today = localToday(user.timezone)
   const yStart = `${year}-01-01`
   const yEnd = minDay(`${year}-12-31`, addDays(today, -1))
   const adjustments = adjustmentRows(user.id, "time", yEnd >= yStart ? yEnd : yStart)
   let opening = adjustments.filter((a) => a.effectiveDate < yStart).reduce((s, a) => s + a.amount, 0)
   if (start < yStart) {
-    const ctx = loadContext(user, start, addDays(yStart, -1), { includePending: false, worklog: false })
+    const ctx = loadContext(user, start, addDays(yStart, -1), { ...pre, includePending: false })
     for (const d of computeDaysFrom(ctx, { raw: true })) opening += d.deltaMin
   }
   const months: StatementMonth[] = []
@@ -767,7 +803,7 @@ export function timeStatement(user: User, year: number): TimeStatement {
   if (yEnd >= yStart) {
     const days =
       start <= yEnd
-        ? computeDaysFrom(loadContext(user, maxDay(start, yStart), yEnd, { includePending: false, worklog: false }), {
+        ? computeDaysFrom(loadContext(user, maxDay(start, yStart), yEnd, { ...pre, includePending: false }), {
             raw: true,
           })
         : []
@@ -779,13 +815,14 @@ export function timeStatement(user: User, year: number): TimeStatement {
       else byMonth.set(m, [d])
     }
     for (let m = 1; m <= 12; m++) {
-      const mdays = byMonth.get(m)
-      if (!mdays?.length) {
-        if (`${year}-${String(m).padStart(2, "0")}-01` > today) break
+      const key = `${year}-${String(m).padStart(2, "0")}`
+      const mdays = byMonth.get(m) ?? []
+      const adjTotal = adjustments.filter((a) => a.effectiveDate.startsWith(key)).reduce((s, a) => s + a.amount, 0)
+      // months before the account start still carry their bookings (e.g. an opening balance)
+      if (!mdays.length && !adjTotal) {
+        if (`${key}-01` > today) break
         continue
       }
-      const key = `${year}-${String(m).padStart(2, "0")}`
-      const adjTotal = adjustments.filter((a) => a.effectiveDate.startsWith(key)).reduce((s, a) => s + a.amount, 0)
       const s = summarize(mdays)
       running += mdays.reduce((t, d) => t + d.deltaMin, 0) + adjTotal
       months.push({ month: m, ...s, adjustmentsMin: r2(adjTotal), balanceMin: r2(running) })
@@ -801,6 +838,21 @@ export function timeStatement(user: User, year: number): TimeStatement {
     adjustments: adjustmentRows(user.id, "time", `${year}-12-31`)
       .filter((a) => a.effectiveDate.startsWith(`${year}-`))
       .map(serializeAdjustment),
+  }
+}
+
+/**
+ * The statement as a lead covering from `from` sees it: totals stay (balance, opening, closing), months that
+ * ended before and the adjustments dated before are left out.
+ */
+export function statementFrom(s: TimeStatement, from: string | null): TimeStatement {
+  if (from == null) return s
+  const monthEnd = (m: number) =>
+    addDays(`${s.year + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}-01`, -1)
+  return {
+    ...s,
+    months: s.months.filter((m) => monthEnd(m.month) >= from),
+    adjustments: s.adjustments.filter((a) => a.effectiveDate >= from),
   }
 }
 
@@ -822,35 +874,56 @@ export function workdaysFactor(schedules: WorkSchedule[], s: string, e: string):
   return days ? total / days / 5 : 1
 }
 
-/** Share of the year [0, 1] the person is employed. */
-export function employmentFraction(user: Pick<User, "employmentStart" | "employmentEnd">, year: number): number {
+/** Employed spans [start, end] within `year`, oldest first. */
+export function employedSpans(timeline: Pick<PersonTimeline, "periods">, year: number): [string, string][] {
   const yStart = `${year}-01-01`
   const yEnd = `${year}-12-31`
-  const s = maxDay(yStart, user.employmentStart ?? yStart)
-  const e = minDay(yEnd, user.employmentEnd ?? yEnd)
-  if (e < s) return 0
-  return (epochDay(e) - epochDay(s) + 1) / (epochDay(yEnd) - epochDay(yStart) + 1)
+  const out: [string, string][] = []
+  for (const p of timeline.periods) {
+    const s = maxDay(yStart, p.start ?? yStart)
+    const e = minDay(yEnd, p.end ?? yEnd)
+    if (e >= s) out.push([s, e])
+  }
+  return out
+}
+
+const daysInYear = (year: number) => epochDay(`${year}-12-31`) - epochDay(`${year}-01-01`) + 1
+const spanDays = (s: string, e: string) => epochDay(e) - epochDay(s) + 1
+
+/** Share of the year [0, 1] the person is employed. */
+export function employmentFraction(timeline: Pick<PersonTimeline, "periods">, year: number): number {
+  return employedSpans(timeline, year).reduce((acc, [s, e]) => acc + spanDays(s, e), 0) / daysInYear(year)
+}
+
+/** Half days, always rounded up. */
+export function roundVacation(days: number): number {
+  return Math.ceil(days * 2 - 1e-9) / 2
 }
 
 /**
- * Yearly entitlement, pro-rated for the employment period of that year and, when the company setting is on,
- * by the person's scheduled days per week (full-time value x days / 5). Rounded to half days.
+ * Yearly entitlement: the vacation days per year of each employed span of that year, pro-rated for the span's
+ * share of the year and by the scheduled days per week (full-time value x days / 5), rounded up to half days.
  */
 export function entitlementForYear(
-  user: User,
+  timeline: PersonTimeline,
   year: number,
   overrides: Map<number, number>,
   schedules: WorkSchedule[],
-  prorate: boolean,
 ): number {
   const o = overrides.get(year)
   if (o != null) return o
-  const frac = employmentFraction(user, year)
-  if (frac <= 0) return 0
-  const s = maxDay(`${year}-01-01`, user.employmentStart ?? `${year}-01-01`)
-  const e = minDay(`${year}-12-31`, user.employmentEnd ?? `${year}-12-31`)
-  const factor = prorate ? workdaysFactor(schedules, s, e) : 1
-  return roundHalfEven(user.vacationDaysPerYear * frac * factor * 2) / 2
+  let days = 0
+  for (const [s, e] of employedSpans(timeline, year)) {
+    // the vacation days per year may change within a span (dated terms)
+    const cuts = timeline.earlier.map((t) => t.validUntil).filter((d) => d >= s && d < e)
+    let from = s
+    for (const until of [...cuts, e]) {
+      const perYear = timeline.termsOn(from).vacationDaysPerYear
+      days += (perYear * spanDays(from, until) * workdaysFactor(schedules, from, until)) / daysInYear(year)
+      from = addDays(until, 1)
+    }
+  }
+  return days > 0 ? roundVacation(days) : 0
 }
 
 export function entitlementOverrides(userId: number): Map<number, number> {
@@ -885,18 +958,37 @@ function emptyVacation(userId: number, year: number): VacationAccount {
   }
 }
 
-export function vacationAccount(user: User, year: number): VacationAccount {
-  const startYear = Number(accountStart(user).slice(0, 4))
+export function vacationAccount(
+  user: User,
+  year: number,
+  excludeAbsenceId?: number,
+  pre: Prebuilt = {},
+): VacationAccount {
+  const timeline = pre.timeline ?? personTimeline(user)
+  const startYear = Number(accountStart(user, timeline).slice(0, 4))
+  const first = Math.min(startYear, year)
+  const ctx = loadContext(user, `${first}-01-01`, `${year}-12-31`, {
+    ...pre,
+    timeline,
+    includePending: true,
+    entries: false,
+    excludeAbsenceId,
+  })
+  return vacationFrom(user, timeline, year, ctx, computeDaysFrom(ctx, { raw: true }))
+}
+
+/** The vacation account of `year` from computed days reaching back to 1 January of the account start year. */
+function vacationFrom(
+  user: User,
+  timeline: PersonTimeline,
+  year: number,
+  ctx: AccountContext,
+  days: Day[],
+): VacationAccount {
+  const startYear = Number(accountStart(user, timeline).slice(0, 4))
   const today = localToday(user.timezone)
   const overrides = entitlementOverrides(user.id)
   const adjustments = adjustmentRows(user.id, "vacation")
-  const first = Math.min(startYear, year)
-  const ctx = loadContext(user, `${first}-01-01`, `${year}-12-31`, {
-    includePending: true,
-    entries: false,
-    worklog: false,
-  })
-  const days = computeDaysFrom(ctx, { raw: true })
   const used = new Map<number, number>()
   const planned = new Map<number, number>()
   const pending = new Map<number, number>()
@@ -913,11 +1005,13 @@ export function vacationAccount(user: User, year: number): VacationAccount {
   }
   const items = adjustments.filter((a) => a.effectiveDate.startsWith(`${year}-`)).map(serializeAdjustment)
   if (year < startYear) return { ...emptyVacation(user.id, year), adjustmentItems: items }
-  const prorate = getAllSettings().vacation_prorate_workdays
-  let carried = 0
+  // bookings dated before the first employment year (e.g. carry-over entered ahead of a hire) open it
+  let carried = adjustments
+    .filter((a) => Number(a.effectiveDate.slice(0, 4)) < startYear)
+    .reduce((s, a) => s + a.amount, 0)
   let result = emptyVacation(user.id, year)
   for (let y = startYear; y <= year; y++) {
-    const ent = entitlementForYear(user, y, overrides, ctx.schedules, prorate)
+    const ent = entitlementForYear(timeline, y, overrides, ctx.schedules)
     const adj = adjustments.filter((a) => a.effectiveDate.startsWith(`${y}-`)).reduce((s, a) => s + a.amount, 0)
     const taken = used.get(y) ?? 0
     const plan = planned.get(y) ?? 0
@@ -948,13 +1042,14 @@ export function countAbsenceDays(user: User, start: string, end: string, startHa
   if (end < start) return 0
   const probe = { startDate: start, endDate: end, startHalf, endHalf }
   const schedules = schedulesOf(user.id)
-  const hols = holidaysFor(user, start, end)
+  const timeline = personTimeline(user)
+  const hols = holidaysFor(user, start, end, timeline.earlier)
   let total = 0
   let si = -1
   for (let n = epochDay(start), last = epochDay(end); n <= last; n++) {
     const d = dayOfEpoch(n)
     while (si + 1 < schedules.length && schedules[si + 1].validFrom <= d) si++
-    if (si < 0 || !isEmployed(user, d) || minutesOnWeekday(schedules[si], weekdayOfEpoch(n)) <= 0) continue
+    if (si < 0 || !timeline.employedOn(d) || minutesOnWeekday(schedules[si], weekdayOfEpoch(n)) <= 0) continue
     const hol = hols.get(d)
     const holH = new Set(hol ? holidayHalves(hol.fraction) : [])
     total += absenceHalves(probe, d).filter((h) => !holH.has(h)).length / 2
@@ -993,6 +1088,7 @@ export function createAdjustment(actor: Actor, userId: number, input: Adjustment
     throw new Validation("Amount must not be zero", { fields: { amount: "zero" } })
   }
   const effectiveDate = input.effectiveDate || localToday(target.timezone)
+  if (!seesDate(actor, target, effectiveDate)) throw beforeCover(actor, target)
   ensureOpenDates(target, effectiveDate)
   const row = db
     .insert(balanceAdjustments)
@@ -1024,6 +1120,7 @@ export function deleteAdjustment(actor: Actor, adjustmentId: number, reason: str
   const adj = db.select().from(balanceAdjustments).where(eq(balanceAdjustments.id, adjustmentId)).get()
   if (!adj || adj.isDeleted) throw new NotFound("Adjustment not found")
   const target = requireAdjuster(actor, adj.userId)
+  requireDate(actor, target, adj.effectiveDate, "Adjustment")
   if (!reason.trim()) throw new Validation("A reason is required", { fields: { reason: "required" } })
   ensureOpenDates(target, adj.effectiveDate)
   const before = snapshot("adjustment", adj)
@@ -1041,6 +1138,8 @@ export function setEntitlement(actor: Actor, userId: number, year: number, days:
   const target = requireAdjuster(actor, userId)
   if (!Number.isInteger(year) || year < 1990 || year > 2100)
     throw new Validation("Invalid year", { fields: { year: "invalid" } })
+  // a lead covering from a later day changes no year that began before it
+  if (!seesDate(actor, target, `${year}-01-01`)) throw beforeCover(actor, target)
   const row = db
     .select()
     .from(vacationEntitlements)

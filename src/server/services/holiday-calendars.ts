@@ -1,12 +1,11 @@
 /**
- * Public-holiday calendars: CRUD, Swiss presets (26 cantons, local presets such as the City of Fribourg)
- * built on date-holidays, optional company days and the yearly top-up of preset calendars. A calendar made
- * from a preset keeps the preset key in `region_code`. Holiday names are stored in English and translated in
- * the UI through the `holidays` i18n namespace.
+ * Public-holiday calendars: CRUD, canton presets (holiday-presets.ts) with their ticked optional and commune
+ * days, optional company days and the yearly top-up of preset calendars. A calendar made from a preset keeps
+ * the preset key in `region_code` and its ticked days in `preset_days`. Holiday names are stored in English
+ * and translated in the UI through the `holidays` i18n namespace. Every holiday change is a revision.
  * Holidays inside signed-off months are frozen (locks.ensureHolidayChangeAllowed + database triggers).
  */
-import Holidays from "date-holidays"
-import { and, asc, count, eq, gte, inArray, lte, max, min, sql } from "drizzle-orm"
+import { and, asc, count, eq, gte, inArray, lt, lte, max, min, sql } from "drizzle-orm"
 import { db } from "../db"
 import {
   type Holiday,
@@ -17,149 +16,87 @@ import {
   teams,
   type User,
   users,
+  userTermsHistory,
 } from "../db/schema"
 import { Conflict, NotFound, Validation } from "../errors"
 import { localToday } from "../time"
 import type { CompanyDayKey } from "./holiday-calendars.schemas"
+import {
+  checkPresetDays,
+  FEDERAL_DAY,
+  isPresetKey,
+  legacyPresetName,
+  type PresetDay,
+  presetHolidays,
+  presetName,
+  selectableDays,
+} from "./holiday-presets"
 import { ensureHolidayChangeAllowed, latestSignedDate } from "./locks"
 import { notify } from "./notifications"
 import { type Actor, requireAdmin } from "./permissions"
+import { record, snapshot } from "./revisions"
 import { getSetting } from "./settings"
-
-export interface HolidayPreset {
-  key: string // "CH-ZH" for a canton, lower case for a local preset ("ch-fr-fribourg")
-  label: string
-}
+import { archiveFromToday, inheritingCalendar } from "./terms"
 
 export type HolidayKind = "federal" | "cantonal" | "company"
 
-interface PresetDay {
-  date: string
-  name: string
-  fraction: number
+/** Who changes holidays: an administrator, or the worker, CLI, setup or demo seed without one. */
+export interface ChangeSource {
+  actor: Actor | null
+  source?: string
 }
 
-/** Local or non-English names from date-holidays mapped to one English name (translated in the UI). */
-const CANONICAL: Record<string, string> = {
-  Bundesfeiertag: "Swiss National Day",
-  "Fête nationale": "Swiss National Day",
-  "Giorno festivo federale": "Swiss National Day",
-  Assumption: "Assumption Day",
-  "Saint-Berthold": "Berchtold's Day",
-  Berchtoldstag: "Berchtold's Day",
-  "2 Janvier": "Berchtold's Day",
-  "Jeûne Genevois": "Geneva Fast",
-  "Instauration de la République": "Republic Day",
-  Mauritiustag: "St. Maurice's Day",
-}
-const ALWAYS_SUNDAY = new Set([
-  "Easter Sunday",
-  "Pentecost",
-  "Federal Day of Thanksgiving, Repentance and Prayer",
-  "Mother's Day",
-  "Father's Day",
-])
-const FEDERAL_DAY = "08-01" // Bundesfeiertag, the only federal public holiday (ArG Art. 20a para. 1)
-
-/** Local presets: a canton's holidays narrowed to what applies in one municipality. */
-const LOCAL_PRESETS: Record<string, { label: string; canton: string; names: ReadonlySet<string> }> = {
-  "ch-fr-fribourg": {
-    label: "CH-FR City of Fribourg",
-    canton: "FR",
-    names: new Set([
-      "New Year's Day",
-      "Good Friday",
-      "Ascension Day",
-      "Corpus Christi",
-      "Swiss National Day",
-      "Assumption Day",
-      "All Saints' Day",
-      "Immaculate Conception",
-      "Christmas Day",
-    ]),
-  },
+function logHoliday(by: ChangeSource, action: "create" | "update" | "delete", row: Holiday, before: Holiday | null) {
+  record({
+    entity: "holiday",
+    row,
+    action,
+    actor: by.actor,
+    subjectUserId: null,
+    before: before ? snapshot("holiday", before) : null,
+    source: by.source,
+  })
 }
 
-const lang = (locale?: string) => (locale && ["en", "de", "fr", "it"].includes(locale) ? locale : "en")
-
-// ------------------------------------------------------------------ catalogue
-
-/** The 26 cantons (code without "CH-"), named in the given language. */
-export function cantons(locale?: string): { code: string; name: string }[] {
-  const states = (new Holidays().getStates("CH", lang(locale)) ?? {}) as Record<string, string>
-  return Object.entries(states)
-    .map(([code, name]) => ({ code, name }))
-    .sort((a, b) => a.name.localeCompare(b.name, locale))
-}
-
-export function holidayPresets(locale?: string): HolidayPreset[] {
-  const list = cantons(locale).map((r) => ({ key: `CH-${r.code}`, label: r.name }))
-  return [...list, ...Object.entries(LOCAL_PRESETS).map(([key, p]) => ({ key, label: p.label }))]
-}
-
-function cantonOf(key: string): string | null {
-  const m = key.match(/^CH-([A-Z]{2})$/)
-  return m && cantons().some((c) => c.code === m[1]) ? m[1] : null
-}
-
-export function isPresetKey(key: string): boolean {
-  return Object.hasOwn(LOCAL_PRESETS, key) || cantonOf(key) != null
-}
-
-function cantonHolidays(canton: string, year: number): PresetDay[] {
-  const out = new Map<string, PresetDay>()
-  for (const h of new Holidays("CH", canton, { types: ["public"] }).getHolidays(year, "en") ?? []) {
-    if (h.type !== "public") continue
-    const name = CANONICAL[h.name] ?? h.name
-    if (ALWAYS_SUNDAY.has(name)) continue
-    const date = h.date.slice(0, 10)
-    if (!out.has(date)) out.set(date, { date, name, fraction: 1 })
-  }
-  return [...out.values()].sort((a, b) => a.date.localeCompare(b.date))
-}
-
-/** Statutory public holidays of a preset in a year (English names, Sunday-only feasts dropped). */
-export function presetHolidays(key: string, year: number): PresetDay[] {
-  const local = LOCAL_PRESETS[key]
-  if (local) return cantonHolidays(local.canton, year).filter((h) => local.names.has(h.name))
-  const canton = cantonOf(key)
-  if (!canton) throw new Validation("Unknown preset", { fields: { preset: "invalid" } })
-  return cantonHolidays(canton, year)
-}
-
-function presetName(key: string): string {
-  const local = LOCAL_PRESETS[key]
-  if (local) return local.label
-  const canton = cantons().find((c) => c.code === cantonOf(key))
-  return `${key} ${canton?.name ?? ""}`.trim()
+function removeHoliday(by: ChangeSource, h: Holiday) {
+  db.delete(holidays).where(eq(holidays.id, h.id)).run()
+  logHoliday(by, "delete", h, h)
 }
 
 function thisYear(): number {
   return Number(localToday(getSetting("default_timezone")).slice(0, 4))
 }
 
-/** Create a calendar from a preset for the given years (default: this and next year). Re-running adds missing dates. */
+/**
+ * Create a calendar from a preset for the given years (default: this and next year) with the ticked days.
+ * Re-running adds missing dates; an existing calendar of the same name keeps its ticked days.
+ */
 export function createCalendarFromPreset(
   key: string,
-  opts: { years?: number[]; makeDefault?: boolean } = {},
+  opts: { years?: number[]; makeDefault?: boolean; presetDays?: readonly string[] } & Partial<ChangeSource> = {},
 ): HolidayCalendar {
   if (!isPresetKey(key)) throw new Validation("Unknown preset", { fields: { preset: "invalid" } })
   const years = opts.years ?? [thisYear(), thisYear() + 1]
-  const name = presetName(key)
-  let cal = db.select().from(holidayCalendars).where(eq(holidayCalendars.name, name)).get()
-  cal ??= db.insert(holidayCalendars).values({ name, regionCode: key }).returning().get()
+  const presetDays = checkPresetDays(key, opts.presetDays ?? [], thisYear())
+  const name = presetName(key, getSetting("default_locale"))
+  let cal =
+    db
+      .select()
+      .from(holidayCalendars)
+      .where(inArray(holidayCalendars.name, [name, legacyPresetName(key)]))
+      .orderBy(holidayCalendars.id)
+      .get() ?? db.insert(holidayCalendars).values({ name, regionCode: key, presetDays }).returning().get()
+  const ticked = cal.presetDays
   insertMissing(
     cal.id,
-    years.flatMap((y) => presetHolidays(key, y)),
+    years.flatMap((y) => presetHolidays(key, y, ticked)),
+    { actor: opts.actor ?? null, source: opts.source },
   )
   if (opts.makeDefault) cal = makeDefault(cal.id)
   return cal
 }
 
-function insertMissing(
-  calendarId: number,
-  items: { date: string; name: string; fraction: number }[],
-): { added: number; skipped: number } {
+function insertMissing(calendarId: number, items: PresetDay[], by: ChangeSource): { added: number; skipped: number } {
   const latest = latestSignedDate()
   const dates = items.map((i) => i.date)
   const existing = new Set(
@@ -179,9 +116,12 @@ function insertMissing(
       skipped++
       continue
     }
-    db.insert(holidays)
+    const row = db
+      .insert(holidays)
       .values({ calendarId, date: it.date, name: it.name.slice(0, 120), fraction: it.fraction })
-      .run()
+      .returning()
+      .get()
+    logHoliday(by, "create", row, null)
     existing.add(it.date)
     added++
   }
@@ -189,6 +129,9 @@ function insertMissing(
 }
 
 function makeDefault(calendarId: number): HolidayCalendar {
+  const current = db.select().from(holidayCalendars).where(eq(holidayCalendars.isDefault, true)).get()
+  // people on the company default switch from today; earlier days keep the old one
+  if (current?.id !== calendarId) archiveFromToday(inheritingCalendar(null))
   db.update(holidayCalendars).set({ isDefault: false }).where(eq(holidayCalendars.isDefault, true)).run()
   return db
     .update(holidayCalendars)
@@ -234,6 +177,7 @@ export function listCalendars(actor: Actor) {
       name: c.name,
       regionCode: c.regionCode,
       hasPreset: isPresetKey(c.regionCode),
+      presetDays: c.presetDays,
       description: c.description,
       isDefault: c.isDefault,
       holidayCount: s?.n ?? 0,
@@ -307,6 +251,14 @@ export function applicableCalendar(user: Pick<User, "holidayCalendarId" | "teamI
   return def ? { calendar: def, source: "default", team: null } : null
 }
 
+/** Everyone whose applicable calendar (own, else team's, else the default, as in applicableCalendar) is `calendarId`. */
+function peopleOnCalendar(calendarId: number): User[] {
+  const own = sql`(select ${holidayCalendars.id} from ${holidayCalendars} where ${holidayCalendars.id} = ${users.holidayCalendarId})`
+  const team = sql`(select ${holidayCalendars.id} from ${teams} join ${holidayCalendars} on ${holidayCalendars.id} = ${teams.holidayCalendarId} where ${teams.id} = ${users.teamId})`
+  const fallback = sql`(select ${holidayCalendars.id} from ${holidayCalendars} where ${eq(holidayCalendars.isDefault, true)} limit 1)`
+  return db.select().from(users).where(sql`coalesce(${own}, ${team}, ${fallback}) = ${calendarId}`).all()
+}
+
 /** Years with at least one holiday, ascending. */
 function calendarYears(calendarId: number): number[] {
   const year = sql<string>`substr(${holidays.date}, 1, 4)`
@@ -357,10 +309,13 @@ export type MyHolidays = NonNullable<ReturnType<typeof myHolidays>>
 export interface CalendarInput {
   name: string
   regionCode: string
+  /** ticked optional and commune days of the preset */
+  presetDays: string[]
   description: string
   isDefault: boolean
 }
 
+/** A new calendar with a preset gets the preset's holidays for this year and next. */
 export function saveCalendar(actor: Actor, input: CalendarInput, id?: number): HolidayCalendar {
   requireAdmin(actor)
   const name = input.name.trim()
@@ -376,29 +331,75 @@ export function saveCalendar(actor: Actor, input: CalendarInput, id?: number): H
   const regionCode = input.regionCode.trim()
   if (regionCode && !isPresetKey(regionCode))
     throw new Validation("Unknown preset", { fields: { regionCode: "invalid" } })
+  const presetDays = regionCode ? checkPresetDays(regionCode, input.presetDays, thisYear()) : []
+  const before = id != null ? getCalendar(id) : null
   const values = {
     name,
     regionCode,
+    presetDays,
     description: input.description.trim().slice(0, 500),
   }
   let cal =
     id != null
-      ? db
-          .update(holidayCalendars)
-          .set(values)
-          .where(eq(holidayCalendars.id, getCalendar(id).id))
-          .returning()
-          .get()
+      ? db.update(holidayCalendars).set(values).where(eq(holidayCalendars.id, id)).returning().get()
       : db.insert(holidayCalendars).values(values).returning().get()
+  if (before && regionCode && before.regionCode === regionCode)
+    applyPresetDayChange(actor, cal.id, regionCode, before.presetDays, presetDays)
+  else if (!before && regionCode) {
+    const y = thisYear()
+    insertMissing(
+      cal.id,
+      [y, y + 1].flatMap((year) => presetHolidays(regionCode, year, presetDays)),
+      { actor },
+    )
+  }
   const anyDefault = db
     .select({ id: holidayCalendars.id })
     .from(holidayCalendars)
     .where(eq(holidayCalendars.isDefault, true))
     .get()
   if (input.isDefault || !anyDefault) cal = makeDefault(cal.id)
-  else if (cal.isDefault && !input.isDefault)
+  else if (cal.isDefault && !input.isDefault) {
+    archiveFromToday(inheritingCalendar(null))
     cal = db.update(holidayCalendars).set({ isDefault: false }).where(eq(holidayCalendars.id, cal.id)).returning().get()
+  }
   return cal
+}
+
+/**
+ * Ticking or unticking a preset day changes that day from today on, in the years the calendar holds, never
+ * inside a signed-off month. A removal matches the preset's date and name, so days edited by hand stay.
+ */
+function applyPresetDayChange(
+  actor: Actor,
+  calendarId: number,
+  key: string,
+  before: readonly string[],
+  after: readonly string[],
+) {
+  const added = new Set(after.filter((n) => !before.includes(n)))
+  const removed = new Set(before.filter((n) => !after.includes(n)))
+  if (!added.size && !removed.size) return
+  const today = localToday(getSetting("default_timezone"))
+  const latest = latestSignedDate()
+  const days = calendarYears(calendarId)
+    .filter((y) => y >= Number(today.slice(0, 4)))
+    .flatMap((y) => selectableDays(key, y))
+    .filter((d) => d.date >= today && (latest == null || d.date > latest))
+  const by = { actor }
+  insertMissing(
+    calendarId,
+    days.filter((d) => added.has(d.name)).map(({ date, name, fraction }) => ({ date, name, fraction })),
+    by,
+  )
+  const gone = new Map(days.filter((d) => removed.has(d.name)).map((d) => [d.date, d.name]))
+  if (!gone.size) return
+  const rows = db
+    .select()
+    .from(holidays)
+    .where(and(eq(holidays.calendarId, calendarId), inArray(holidays.date, [...gone.keys()])))
+    .all()
+  for (const h of rows) if (gone.get(h.date) === h.name) removeHoliday(by, h)
 }
 
 export function setDefaultCalendar(actor: Actor, id: number): HolidayCalendar {
@@ -406,10 +407,18 @@ export function setDefaultCalendar(actor: Actor, id: number): HolidayCalendar {
   return makeDefault(getCalendar(id).id)
 }
 
-/** Deleting removes its holidays; teams and people fall back to the next calendar (ON DELETE SET NULL). */
+/**
+ * Deleting removes its holidays; teams and people fall back to the next calendar (ON DELETE SET NULL). A calendar
+ * that counted for days already passed stays: removing it would rewrite those days.
+ */
 export function deleteCalendar(actor: Actor, id: number): void {
   requireAdmin(actor)
   const cal = getCalendar(id)
+  const people = peopleOnCalendar(cal.id)
+  if (calendarCountedBefore(cal.id, localToday(getSetting("default_timezone")), people.length > 0))
+    throw new Conflict("This calendar counted for days already passed and can no longer be deleted", {
+      code: "calendar_in_use",
+    })
   const latest = latestSignedDate()
   if (latest != null) {
     const frozen = db
@@ -419,7 +428,28 @@ export function deleteCalendar(actor: Actor, id: number): void {
       .get()
     if (frozen) ensureHolidayChangeAllowed(frozen.d)
   }
+  // its people fall back to another calendar from today
+  archiveFromToday(people)
+  for (const h of db.select().from(holidays).where(eq(holidays.calendarId, cal.id)).all()) removeHoliday({ actor }, h)
   db.delete(holidayCalendars).where(eq(holidayCalendars.id, cal.id)).run()
+}
+
+/** Did the calendar have holidays before `today` while someone counted with it (now or in earlier terms)? */
+function calendarCountedBefore(calendarId: number, today: string, countsNow: boolean): boolean {
+  const past = db
+    .select({ d: holidays.date })
+    .from(holidays)
+    .where(and(eq(holidays.calendarId, calendarId), lt(holidays.date, today)))
+    .get()
+  if (!past) return false
+  if (countsNow) return true
+  return (
+    db
+      .select({ id: userTermsHistory.id })
+      .from(userTermsHistory)
+      .where(eq(userTermsHistory.holidayCalendarId, calendarId))
+      .get() != null
+  )
 }
 
 // ------------------------------------------------------------------ holidays
@@ -457,13 +487,15 @@ export function saveHoliday(actor: Actor, calendarId: number, input: HolidayInpu
   if (clash && clash.id !== id)
     throw new Conflict("There is already a holiday on this date", { fields: { date: "taken" } })
   const values = { date: input.date, name: input.name.trim().slice(0, 120), fraction: input.fraction }
-  return existing
+  const row = existing
     ? db.update(holidays).set(values).where(eq(holidays.id, existing.id)).returning().get()
     : db
         .insert(holidays)
         .values({ calendarId, ...values })
         .returning()
         .get()
+  logHoliday({ actor }, existing ? "update" : "create", row, existing ?? null)
+  return row
 }
 
 export function deleteHoliday(actor: Actor, holidayId: number): Holiday {
@@ -471,47 +503,47 @@ export function deleteHoliday(actor: Actor, holidayId: number): Holiday {
   const h = db.select().from(holidays).where(eq(holidays.id, holidayId)).get()
   if (!h) throw new NotFound("Holiday not found")
   ensureHolidayChangeAllowed(h.date)
-  db.delete(holidays).where(eq(holidays.id, h.id)).run()
+  removeHoliday({ actor }, h)
   return h
 }
 
 export interface ImportInput {
   preset: string
+  presetDays: string[]
   year: number
   replace: boolean
 }
 
-/** Import a preset's holidays of one year into a calendar; the calendar keeps the preset key if it had none. */
+/**
+ * Import a preset's holidays of one year with the ticked days into a calendar. A calendar without a preset
+ * takes on the preset and its ticked days.
+ */
 export function importPreset(actor: Actor, calendarId: number, input: ImportInput): { added: number; skipped: number } {
   requireAdmin(actor)
   const cal = getCalendar(calendarId)
   if (!isPresetKey(input.preset)) throw new Validation("Unknown preset", { fields: { preset: "invalid" } })
   if (!Number.isInteger(input.year) || input.year < 1990 || input.year > 2100)
     throw new Validation("Invalid year", { fields: { year: "invalid" } })
+  const presetDays = checkPresetDays(input.preset, input.presetDays, input.year)
   if (input.replace) {
     const rows = calendarYear(actor, cal.id, input.year)
     for (const h of rows) ensureHolidayChangeAllowed(h.date)
-    if (rows.length)
-      db.delete(holidays)
-        .where(
-          inArray(
-            holidays.id,
-            rows.map((h) => h.id),
-          ),
-        )
-        .run()
+    for (const h of rows) removeHoliday({ actor }, h)
   }
-  const result = insertMissing(cal.id, presetHolidays(input.preset, input.year))
+  const result = insertMissing(cal.id, presetHolidays(input.preset, input.year, presetDays), { actor })
   if (!isPresetKey(cal.regionCode))
-    db.update(holidayCalendars).set({ regionCode: input.preset }).where(eq(holidayCalendars.id, cal.id)).run()
+    db.update(holidayCalendars)
+      .set({ regionCode: input.preset, presetDays })
+      .where(eq(holidayCalendars.id, cal.id))
+      .run()
   return result
 }
 
 /** Federal (1 August), cantonal (from the calendar's preset) or a company day (anything else in a preset calendar). */
-export function holidayKinds(cal: Pick<HolidayCalendar, "regionCode">, rows: Pick<Holiday, "date">[]) {
+export function holidayKinds(cal: Pick<HolidayCalendar, "regionCode" | "presetDays">, rows: Pick<Holiday, "date">[]) {
   const years = [...new Set(rows.map((h) => Number(h.date.slice(0, 4))))]
   const preset = isPresetKey(cal.regionCode)
-    ? new Set(years.flatMap((y) => presetHolidays(cal.regionCode, y).map((h) => h.date)))
+    ? new Set(years.flatMap((y) => presetHolidays(cal.regionCode, y, cal.presetDays).map((h) => h.date)))
     : null
   return (date: string): HolidayKind | null => {
     if (date.slice(5) === FEDERAL_DAY) return "federal"
@@ -593,8 +625,9 @@ export function companyDayOptions(actor: Actor, calendarId: number, year: number
   const rows = calendarYear(actor, calendarId, year)
   const cal = getCalendar(calendarId)
   const taken = new Set(rows.map((h) => h.date))
+  // the canton's own days (ticked or not) are chosen in the calendar settings, not here
   const statutory = isPresetKey(cal.regionCode)
-    ? new Set(presetHolidays(cal.regionCode, year).map((h) => h.date))
+    ? new Set([...presetHolidays(cal.regionCode, year, []), ...selectableDays(cal.regionCode, year)].map((h) => h.date))
     : new Set<string>()
   return COMPANY_DAYS.filter((d) => !d.presets || d.presets.includes(cal.regionCode))
     .map((d) => ({ key: d.key, date: d.date(year), name: d.name, fraction: d.fraction }))
@@ -647,14 +680,17 @@ export interface TopUpResult {
  * Only inserts; dates on or before the latest signed-off period are skipped. From 1 November, calendars
  * without a preset that have nothing for next year are reported to the administrators once.
  */
-export function topUpHolidays(today: string = localToday(getSetting("default_timezone"))): TopUpResult {
+export function topUpHolidays(
+  today: string = localToday(getSetting("default_timezone")),
+  source = "worker",
+): TopUpResult {
   const year = Number(today.slice(0, 4))
   const result: TopUpResult = { topped: [], missing: [] }
   const admins = activeAdminIds()
   for (const cal of db.select().from(holidayCalendars).orderBy(asc(holidayCalendars.id)).all()) {
     if (isPresetKey(cal.regionCode)) {
       for (const y of [year, year + 1]) {
-        const items = presetHolidays(cal.regionCode, y)
+        const items = presetHolidays(cal.regionCode, y, cal.presetDays)
         const present = items.length
           ? db
               .select({ id: holidays.id })
@@ -672,7 +708,7 @@ export function topUpHolidays(today: string = localToday(getSetting("default_tim
               .get()
           : null
         if (present) continue
-        const { added } = insertMissing(cal.id, items)
+        const { added } = insertMissing(cal.id, items, { actor: null, source })
         if (!added) continue
         result.topped.push({ calendarId: cal.id, year: y, added })
         for (const id of admins)

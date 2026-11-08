@@ -43,7 +43,7 @@
     "pending_absence": "Open requests",
     "not_employed": "Not employed",
     "already_signed": "Already signed off",
-    "worklog_incomplete": "Work log incomplete"
+    "projects_missing": "Projects missing"
   },
   "sign": "Sign off",
   "select_person": "Select {name}",
@@ -63,6 +63,6 @@
     "pending_absence": "Decide the open absence requests first.",
     "not_employed": "Not employed in this month.",
     "already_signed": "Already signed off.",
-    "worklog_incomplete": "Some days lack work log entries."
+    "projects_missing": "Some work has no project."
   }
 }

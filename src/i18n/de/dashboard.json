@@ -13,9 +13,9 @@
   "vacation_hint": "{taken} bezogen · {planned} geplant",
   "week_title": "Diese Woche",
   "open_time": "Meine Zeit",
-  "upcoming": "Nächste Abwesenheiten",
+  "upcoming": "Nächste Absenzen",
   "request": "Beantragen",
-  "no_upcoming": "Keine geplanten Abwesenheiten.",
+  "no_upcoming": "Keine geplanten Absenzen.",
   "since": "seit {time}",
   "target_today": "Soll {target}",
   "breaks": "{time} Pause",
@@ -30,11 +30,11 @@
   "overnight_fix": "Korrigieren",
   "findings_one": "{count} Hinweis zum Arbeitsgesetz",
   "findings_other": "{count} Hinweise zum Arbeitsgesetz",
-  "worklog_missing": "Arbeitsjournal fehlt für {date}",
-  "worklog_add": "Ergänzen",
   "ring_today": "heute",
   "day_off": "Heute frei",
   "legend_reached": "Soll erreicht",
   "legend_worked": "Gearbeitet",
-  "legend_target": "Soll"
+  "legend_target": "Soll",
+  "project_missing": "Arbeit ohne Projekt am {date}",
+  "project_fix": "Zuordnen"
 }

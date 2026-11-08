@@ -1,6 +1,6 @@
 {
   "title": "Giorni festivi",
-  "sub": "I giorni festivi che valgono per te. Nei tuoi giorni lavorativi riducono le ore dovute; non puoi modificarli.",
+  "sub": "I giorni festivi che valgono per te. Nei tuoi giorni lavorativi riducono le ore dovute.",
   "manage": "Gestisci calendari",
   "source_user": "assegnato a te personalmente",
   "source_team": "calendario del tuo team ({team})",

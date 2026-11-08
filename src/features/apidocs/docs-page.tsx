@@ -384,7 +384,7 @@ export function ApiDocsView({ doc }: { doc: ApiDocument }) {
         <ul className="grid gap-1 text-sm sm:grid-cols-2">
           {errorCodes.map((code) => (
             <li key={code} className="flex gap-3">
-              <span className="w-10 font-mono text-muted-foreground">{code}</span>
+              <span className="w-10 shrink-0 font-mono text-muted-foreground">{code}</span>
               <span>
                 <Rich text={errors?.[code]?.description ?? ""} />
               </span>

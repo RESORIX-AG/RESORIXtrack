@@ -15,6 +15,7 @@ import { authClient } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
 
 export const Route = createFileRoute("/_auth/login")({
+  staticData: { titleKey: "auth.sign_in_title" },
   validateSearch: z.object({ next: z.string().optional(), error: z.string().optional() }),
   beforeLoad: ({ context, search }) => {
     // safeNext keeps the target same-origin; framing is refused by CSP frame-ancestors and X-Frame-Options

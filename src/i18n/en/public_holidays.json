@@ -1,6 +1,6 @@
 {
   "title": "Public holidays",
-  "sub": "The public holidays that apply to you. On your working days they reduce your target hours; you cannot edit them.",
+  "sub": "The public holidays that apply to you. On your working days they reduce your target hours.",
   "manage": "Manage calendars",
   "source_user": "assigned to you personally",
   "source_team": "calendar of your team ({team})",

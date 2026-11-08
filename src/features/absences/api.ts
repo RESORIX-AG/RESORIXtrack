@@ -23,7 +23,7 @@ import { absenceInput, absencePatch, dayString, listInput, previewInput } from "
 import { computeDaysFrom, loadContext, vacationAccount } from "@/server/services/accounts"
 import { addAttachment, deleteAttachment } from "@/server/services/attachments"
 import { withOutbox } from "@/server/services/outbox"
-import { requireView } from "@/server/services/permissions"
+import { requireView, seesDate } from "@/server/services/permissions"
 import { getSetting } from "@/server/services/settings"
 import { localToday } from "@/server/time"
 
@@ -183,12 +183,13 @@ export const fetchCalendarDays = createServerFn({ method: "GET" })
   )
   .handler(({ data, context: { actor } }) => {
     const user = data.userId == null || data.userId === actor.id ? actor.user : requireView(actor, data.userId)
-    const ctx = loadContext(user, data.from, data.to, { includePending: true, entries: false, worklog: false })
+    const ctx = loadContext(user, data.from, data.to, { includePending: true, entries: false })
     return computeDaysFrom(ctx).map((d) => ({
       date: d.date,
       workday: d.isWorkday,
       holiday: d.holiday,
-      absences: d.absences,
+      // a lead covering from a later day sees no absences before it
+      absences: seesDate(actor, user, d.date) ? d.absences : [],
     }))
   })
 export type CalendarDayDto = Awaited<ReturnType<typeof fetchCalendarDays>>[number]

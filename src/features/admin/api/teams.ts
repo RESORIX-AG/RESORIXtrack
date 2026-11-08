@@ -14,7 +14,7 @@ import {
 } from "@/server/services/teams"
 
 const id = z.number().int().positive()
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const day = z.iso.date()
 const teamInput = z.object({
   name: z.string().max(120),
   color: z.string().regex(/^#[0-9a-f]{6}$/),

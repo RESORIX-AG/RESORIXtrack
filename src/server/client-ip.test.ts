@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { auth } from "./auth"
-import { CLIENT_IP_HEADER, clientIp, withClientIp } from "./client-ip"
+import { CLIENT_IP_HEADER, clientIp, PEER_HEADER, withClientIp } from "./client-ip"
 
 const h = (headers: Record<string, string>) => new Headers(headers)
 /** vitest sets BASE_URL to "/", so env.baseUrl is empty here and Better Auth derives its origin from the request */
@@ -21,10 +21,12 @@ describe("clientIp", () => {
     expect(clientIp(h({ "x-forwarded-for": "6.6.6.6, 7.7.7.7, 10.0.0.2" }), 1)).toBe("10.0.0.2")
   })
 
-  it("ignores forwarded headers without a trusted proxy and reads X-Real-IP", () => {
+  it("ignores forwarded headers without a trusted proxy and uses the TCP peer", () => {
     expect(clientIp(h({ "x-forwarded-for": CHAIN }), 0)).toBe("")
-    expect(clientIp(h({ "x-forwarded-for": CHAIN, "x-real-ip": "10.0.0.5" }), 0)).toBe("10.0.0.5")
-    expect(clientIp(h({ "x-real-ip": "10.0.0.5" }), 1)).toBe("10.0.0.5")
+    expect(clientIp(h({ "x-forwarded-for": CHAIN, [PEER_HEADER]: "10.0.0.5" }), 0)).toBe("10.0.0.5")
+    expect(clientIp(h({ [PEER_HEADER]: "10.0.0.5" }), 1)).toBe("10.0.0.5")
+    // a client could send X-Real-IP itself to get a fresh bucket for every request
+    expect(clientIp(h({ "x-real-ip": "10.0.0.6" }), 0)).toBe("")
     expect(clientIp(undefined, 1)).toBe("")
   })
 })
@@ -34,7 +36,7 @@ describe("withClientIp", () => {
     const spoofed = new Request("http://localhost/x", { headers: { [CLIENT_IP_HEADER]: "9.9.9.9" } })
     expect(withClientIp(spoofed).headers.get(CLIENT_IP_HEADER)).toBeNull()
     const real = new Request("http://localhost/x", {
-      headers: { [CLIENT_IP_HEADER]: "9.9.9.9", "x-real-ip": "10.0.0.1" },
+      headers: { [CLIENT_IP_HEADER]: "9.9.9.9", [PEER_HEADER]: "10.0.0.1" },
     })
     expect(withClientIp(real).headers.get(CLIENT_IP_HEADER)).toBe("10.0.0.1")
   })
@@ -43,7 +45,7 @@ describe("withClientIp", () => {
     const req = withClientIp(
       new Request("http://localhost/api/auth/sign-in/email?x=1", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-real-ip": "10.0.0.1" },
+        headers: { "content-type": "application/json", [PEER_HEADER]: "10.0.0.1" },
         body: JSON.stringify({ email: "a@example.nomail" }),
       }),
     )
@@ -59,7 +61,7 @@ const verifyTotp = (ip: string, extra: Record<string, string> = {}) =>
   auth.handler(
     new Request(`${ORIGIN}/api/auth/two-factor/verify-totp`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: ORIGIN, "x-real-ip": ip, ...extra },
+      headers: { "content-type": "application/json", origin: ORIGIN, [PEER_HEADER]: ip, ...extra },
       body: JSON.stringify({ code: "000000" }),
     }),
   )

@@ -3,9 +3,11 @@ import { count, eq } from "drizzle-orm"
 import { db, rawSqlite } from "@/server/db"
 import { holidays } from "@/server/db/schema"
 import { AppError } from "@/server/errors"
-import { createCalendarFromPreset, holidayPresets, topUpHolidays } from "@/server/services/holiday-calendars"
+import { createCalendarFromPreset, topUpHolidays } from "@/server/services/holiday-calendars"
+import { defaultPresetDays, holidayPresets } from "@/server/services/holiday-presets"
 
-const USAGE = "usage: rt install-holidays --preset <key> [--years 2026,2027] [--default] | --top-up"
+const USAGE =
+  'usage: rt install-holidays --preset <key> [--days "Easter Monday,Whit Monday"] [--years 2026,2027] [--default] | --top-up'
 
 /** Create (or complete) a public-holiday calendar from a Swiss preset; signed-off months are never changed. */
 export default {
@@ -16,12 +18,13 @@ export default {
       options: {
         preset: { type: "string" },
         years: { type: "string" },
+        days: { type: "string" },
         default: { type: "boolean" },
         "top-up": { type: "boolean" },
       },
     })
     if (values["top-up"]) {
-      const r = rawSqlite().transaction(() => topUpHolidays())()
+      const r = rawSqlite().transaction(() => topUpHolidays(undefined, "cli"))()
       for (const t of r.topped) console.log(`calendar #${t.calendarId}: ${t.added} holidays added for ${t.year}`)
       for (const m of r.missing) console.log(`calendar #${m.calendarId}: no holidays for ${m.year} (no preset)`)
       if (!r.topped.length && !r.missing.length) console.log("nothing to add")
@@ -39,7 +42,12 @@ export default {
     }
     try {
       const cal = rawSqlite().transaction(() =>
-        createCalendarFromPreset(values.preset!, { years, makeDefault: values.default ?? false }),
+        createCalendarFromPreset(values.preset!, {
+          years,
+          presetDays: values.days?.split(",").map((d) => d.trim()) ?? defaultPresetDays(values.preset!),
+          makeDefault: values.default ?? false,
+          source: "cli",
+        }),
       )()
       const n = db.select({ n: count() }).from(holidays).where(eq(holidays.calendarId, cal.id)).get()?.n ?? 0
       console.log(`${cal.name} (#${cal.id}): ${n} holidays${cal.isDefault ? ", default calendar" : ""}`)

@@ -5,7 +5,7 @@
  */
 import { existsSync, unlinkSync } from "node:fs"
 import path from "node:path"
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, like, or, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, like, max, or, sql } from "drizzle-orm"
 import type { JsonObject } from "@/lib/json"
 import { isSupportedLocale } from "@/lib/locales"
 import { db } from "../db"
@@ -18,6 +18,7 @@ import {
   authTokens,
   CAPABILITIES,
   type Capability,
+  employmentHistory,
   holidayCalendars,
   loginAttempts,
   notifications,
@@ -31,12 +32,16 @@ import {
   type User,
   users,
   vacationEntitlements,
+  verification,
   workSchedules,
 } from "../db/schema"
 import { env } from "../env"
 import { Conflict, NotFound, Validation } from "../errors"
-import { iso, isValidTz, localToday, utcnow } from "../time"
-import { ensureScheduleChangeAllowed } from "./locks"
+import { addDays, iso, isValidTz, localDateOf, localToday, utcnow } from "../time"
+import { maxDay, minDay } from "./absences.schemas"
+import { accountStart } from "./accounts"
+import { stopRunning } from "./clock"
+import { signedMonthsOverlapping } from "./locks"
 import { notify } from "./notifications"
 import { deferMail } from "./outbox"
 import {
@@ -44,11 +49,16 @@ import {
   activeLeadRows,
   canAdjustBalance,
   canEditSchedule,
+  ensureNotJoiningOwnTeam,
   getUserOr404,
   requireAdmin,
+  requireSomeoneElse,
 } from "./permissions"
 import { record, snapshot } from "./revisions"
 import { getSetting } from "./settings"
+import { archiveTerms } from "./terms"
+import { currentTerms, type PersonTimeline, personTimeline } from "./timeline"
+import { TERM_KEYS } from "./timeline.schemas"
 
 const EMAIL_RE =
   /^[a-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
@@ -81,6 +91,8 @@ export interface UserRow {
   teamName: string | null
   teamColor: string | null
   isLead: boolean
+  /** leads only as a deputy today */
+  isDeputy: boolean
   isActive: boolean
   invitePending: boolean
   mfaEnabled: boolean
@@ -122,7 +134,9 @@ export function listUsers(actor: Actor, f: UserFilters = {}): UserRow[] {
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(asc(users.name))
     .all()
-  const leads = new Set(activeLeadRows().map((r) => r.userId))
+  const leadRows = activeLeadRows()
+  const leads = new Set(leadRows.map((r) => r.userId))
+  const fullLeads = new Set(leadRows.filter((r) => r.role === "lead").map((r) => r.userId))
   const withPassword = credentialUserIds()
   return rows
     .map(({ u, teamName, teamColor }) => ({
@@ -135,8 +149,9 @@ export function listUsers(actor: Actor, f: UserFilters = {}): UserRow[] {
       teamName,
       teamColor,
       isLead: leads.has(u.id),
+      isDeputy: leads.has(u.id) && !fullLeads.has(u.id),
       isActive: u.isActive,
-      invitePending: !withPassword.has(u.id) && u.anonymizedAt == null,
+      invitePending: !withPassword.has(u.id) && u.lastLoginAt == null && u.anonymizedAt == null,
       mfaEnabled: Boolean(u.twoFactorEnabled),
       lastLoginAt: iso(u.lastLoginAt),
       employmentStart: u.employmentStart,
@@ -177,6 +192,7 @@ export function getUserDetail(actor: Actor, userId: number) {
     .orderBy(desc(vacationEntitlements.year))
     .all()
   const retention = retentionInfo(u)
+  const timeline = personTimeline(u)
   return {
     id: u.id,
     name: u.name,
@@ -198,7 +214,7 @@ export function getUserDetail(actor: Actor, userId: number) {
     birthDate: u.birthDate,
     isActive: u.isActive,
     isSelf: u.id === actor.id,
-    invitePending: !hasCredential(u.id) && u.anonymizedAt == null,
+    invitePending: !hasCredential(u.id) && u.lastLoginAt == null && u.anonymizedAt == null,
     mfaEnabled: Boolean(u.twoFactorEnabled),
     passkeys: db.select({ n: count() }).from(passkey).where(eq(passkey.userId, u.id)).get()?.n ?? 0,
     lastLoginAt: iso(u.lastLoginAt),
@@ -230,6 +246,13 @@ export function getUserDetail(actor: Actor, userId: number) {
     entitlements: entitlements.map((e) => ({ id: e.id, year: e.year, days: e.days, note: e.note })),
     canEditSchedules: canEditSchedule(actor, u),
     anonymizeAllowedFrom: retention.allowedFrom,
+    /** First day of the current terms (null: they always applied). */
+    termsFrom: timeline.currentFrom,
+    earlierTerms: timeline.earlier.map((t) => ({ ...currentTerms(t), validUntil: t.validUntil })).toReversed(),
+    earlierPeriods: timeline.periods
+      .slice(0, -1)
+      .map((p) => ({ start: p.start, end: p.end }))
+      .toReversed(),
   }
 }
 export type UserDetail = ReturnType<typeof getUserDetail>
@@ -257,11 +280,17 @@ export interface UserInput {
   argExempt: boolean
   regularNightWork: boolean
   birthDate: string | null
+  /** First day changed terms (timezone, vacation days, labour-law fields) apply on; default today. */
+  termsFrom?: string | null
 }
 
 const hasControlChars = (v: string) => /\p{Cc}/u.test(v)
 
-function validate(data: Partial<UserInput>): void {
+/** `current`: the stored employment dates (or create defaults) the patch is checked against. */
+function validate(
+  data: Partial<UserInput>,
+  current: { employmentStart: string | null; employmentEnd: string | null } | null = null,
+): void {
   const fields: Record<string, string> = {}
   if (data.name !== undefined && (!data.name.trim() || data.name.length > 120 || hasControlChars(data.name)))
     fields.name = data.name.trim() ? "invalid" : "required"
@@ -283,8 +312,9 @@ function validate(data: Partial<UserInput>): void {
       .get()
   )
     fields.holidayCalendarId = "invalid"
-  if (data.employmentStart && data.employmentEnd && data.employmentEnd < data.employmentStart)
-    fields.employmentEnd = "before_start"
+  const start = data.employmentStart || current?.employmentStart
+  const end = data.employmentEnd !== undefined ? data.employmentEnd || null : (current?.employmentEnd ?? null)
+  if (start && end && end < start) fields.employmentEnd = "before_start"
   if (data.vacationDaysPerYear !== undefined && !(data.vacationDaysPerYear >= 0 && data.vacationDaysPerYear <= 366))
     fields.vacationDaysPerYear = "invalid"
   if (data.birthDate && data.birthDate > localToday(getSetting("default_timezone"))) fields.birthDate = "future"
@@ -319,8 +349,9 @@ export function createUser(
   requireAdmin(actor)
   const email = normalizeEmail(input.email)
   ensureEmailFree(email)
-  validate(input)
   const tz = input.timezone || getSetting("default_timezone")
+  validate(input, { employmentStart: localToday(isValidTz(tz) ? tz : "UTC"), employmentEnd: null })
+  ensureNotJoiningOwnTeam(actor, input.teamId ?? null)
   const u = db
     .insert(users)
     .values({
@@ -367,12 +398,38 @@ export function createUser(
   return u
 }
 
+const SELF_LOCKED = [
+  "vacationDaysPerYear",
+  "employmentStart",
+  "employmentEnd",
+  "legalWeeklyMaxHours",
+  "recordingMode",
+  "argExempt",
+  "regularNightWork",
+  "teamId",
+  "holidayCalendarId",
+] as const
+
+const norm = (v: unknown) => (v === "" || v === undefined ? null : v)
+
+/**
+ * Widens access or changes what time and vacation count against: administrators need someone else for that on
+ * their own account.
+ */
+function grantsOrRetargets(u: User, patch: Partial<UserInput>): boolean {
+  const gainsCapability = (patch.capabilities ?? []).some((c) => !(u.capabilities ?? []).includes(c))
+  const changesContract = SELF_LOCKED.some((k) => patch[k] !== undefined && norm(patch[k]) !== norm(u[k]))
+  return gainsCapability || changesContract
+}
+
 /** Emails are deferred (outbox) and go out only after the transaction committed. */
 export function updateUser(actor: Actor, userId: number, patch: Partial<UserInput>): User {
   requireAdmin(actor)
   const u = getUserOr404(userId)
   if (u.anonymizedAt) throw new Conflict("This account is anonymised", { code: "already_anonymised" })
-  validate(patch)
+  validate(patch, u)
+  if (grantsOrRetargets(u, patch))
+    requireSomeoneElse(actor, u.id, "Another administrator has to change this for you", { hrExempt: false })
   const next: Partial<typeof users.$inferInsert> = {}
   let oldEmail: string | null = null
   if (patch.email !== undefined) {
@@ -383,18 +440,10 @@ export function updateUser(actor: Actor, userId: number, patch: Partial<UserInpu
       next.email = email
     }
   }
+  const timeline = personTimeline(u)
   for (const key of ["employmentStart", "employmentEnd"] as const) {
     if (patch[key] !== undefined && (patch[key] || null) !== u[key]) {
-      const candidates = [patch[key], u[key]].filter((d): d is string => !!d).sort()
-      if (candidates.length) {
-        try {
-          ensureScheduleChangeAllowed(u, candidates[0])
-        } catch (err) {
-          if (err instanceof Conflict)
-            throw new Conflict(err.message, { code: "period_signed_off", fields: { [key]: "signed_off" } })
-          throw err
-        }
-      }
+      ensureEmploymentMoveAllowed(u, timeline, key, patch[key] || null)
       next[key] = patch[key] || null
     }
   }
@@ -418,6 +467,11 @@ export function updateUser(actor: Actor, userId: number, patch: Partial<UserInpu
   ] as const) {
     if (patch[key] !== undefined) (next as Record<string, unknown>)[key] = patch[key]
   }
+  if (next.teamId != null && next.teamId !== u.teamId) ensureNotJoiningOwnTeam(actor, next.teamId)
+  const termsFrom = TERM_KEYS.some((k) => next[k] !== undefined && next[k] !== u[k])
+    ? archiveTerms(u, patch.termsFrom ?? null, timeline)
+    : null
+  if (next.employmentStart) coverStartWithSchedule(actor, u, next.employmentStart)
   const before = snapshot("user", u)
   const updated = Object.keys(next).length ? db.update(users).set(next).where(eq(users.id, u.id)).returning().get() : u
   const changedSnapshot = JSON.stringify(snapshot("user", updated)) !== JSON.stringify(before)
@@ -441,7 +495,15 @@ export function updateUser(actor: Actor, userId: number, patch: Partial<UserInpu
       updated.birthDate,
     ])
   if (changedSnapshot || changedOther)
-    record({ entity: "user", row: updated, action: "update", actor, subjectUserId: u.id, before })
+    record({
+      entity: "user",
+      row: updated,
+      action: "update",
+      actor,
+      subjectUserId: u.id,
+      before,
+      reason: termsFrom ? `Terms from ${termsFrom}` : "",
+    })
   if (oldEmail) {
     // the old mailbox may be compromised or gone: end sessions and pending links, tell the old address
     revokeAccess(u.id, { apiKeys: true })
@@ -453,9 +515,95 @@ export function updateUser(actor: Actor, userId: number, patch: Partial<UserInpu
   return updated
 }
 
-/** Sign out everywhere and expire pending invitation links (optionally API keys too). */
+/** Days whose employment status changes when `key` moves to `value` must not be signed off. */
+function ensureEmploymentMoveAllowed(
+  u: User,
+  timeline: PersonTimeline,
+  key: "employmentStart" | "employmentEnd",
+  value: string | null,
+): void {
+  const earlier = timeline.periods.slice(0, -1)
+  const lastEarlierEnd = earlier.at(-1)?.end ?? null
+  if (key === "employmentStart" && value && lastEarlierEnd && value <= lastEarlierEnd)
+    throw new Validation("The employment starts after the earlier employment ended", {
+      fields: { employmentStart: "overlaps_earlier" },
+    })
+  const old = u[key]
+  const [from, to] =
+    key === "employmentStart"
+      ? [
+          minDay(old ?? "0001-01-01", value ?? "0001-01-01"),
+          addDays(maxDay(old ?? "0001-01-01", value ?? "0001-01-01"), -1),
+        ]
+      : [
+          addDays(minDay(old ?? "9999-12-30", value ?? "9999-12-30"), 1),
+          maxDay(old ?? "9999-12-31", value ?? "9999-12-31"),
+        ]
+  if (from > to) return
+  const rows = signedMonthsOverlapping(u.id, from, to)
+  if (rows.length)
+    throw new Conflict(`This would change the signed-off month(s) ${rows.map((r) => r.month).join(", ")}`, {
+      code: "period_signed_off",
+      fields: { [key]: "signed_off" },
+    })
+}
+
+/** The first schedule version starts no later than the employment (a day without a schedule has no target). */
+function coverStartWithSchedule(actor: Actor, u: User, start: string): void {
+  const first = db
+    .select()
+    .from(workSchedules)
+    .where(eq(workSchedules.userId, u.id))
+    .orderBy(asc(workSchedules.validFrom))
+    .limit(1)
+    .get()
+  if (!first || first.validFrom <= start) return
+  const { id: _id, createdAt: _created, ...copy } = first
+  const sched = db
+    .insert(workSchedules)
+    .values({ ...copy, validFrom: start })
+    .returning()
+    .get()
+  record({ entity: "schedule", row: sched, action: "create", actor, subjectUserId: u.id, before: null })
+}
+
+/** Employ a former employee again from `start`: the ended period is kept, a new one begins. */
+export function rehire(actor: Actor, userId: number, start: string): User {
+  requireAdmin(actor)
+  const u = getUserOr404(userId)
+  if (u.anonymizedAt) throw new Conflict("This account is anonymised", { code: "already_anonymised" })
+  if (!u.employmentEnd || start <= u.employmentEnd)
+    throw new Validation("Rehiring starts after the employment ended", { fields: { employmentStart: "before_end" } })
+  requireSomeoneElse(actor, u.id, "Another administrator has to change this for you", { hrExempt: false })
+  const before = snapshot("user", u)
+  db.insert(employmentHistory)
+    .values({ userId: u.id, startDate: u.employmentStart ?? accountStart(u), endDate: u.employmentEnd })
+    .run()
+  const updated = db
+    .update(users)
+    .set({ employmentStart: start, employmentEnd: null, isActive: true })
+    .where(eq(users.id, u.id))
+    .returning()
+    .get()
+  record({
+    entity: "user",
+    row: updated,
+    action: "update",
+    actor,
+    subjectUserId: u.id,
+    before,
+    reason: `Rehired from ${start} (earlier employment ${u.employmentStart ?? "?"} to ${u.employmentEnd})`,
+  })
+  return updated
+}
+
+/** Sign out everywhere and expire pending invitation and password reset links (optionally API keys too). */
 function revokeAccess(userId: number, opts: { apiKeys?: boolean; passkeys?: boolean } = {}): number {
   if (opts.passkeys) db.delete(passkey).where(eq(passkey.userId, userId)).run()
+  // reset links are stored under a hash of their identifier (auth.ts), so only the value names the person
+  db.delete(verification)
+    .where(eq(verification.value, String(userId)))
+    .run()
   db.update(authTokens)
     .set({ usedAt: utcnow() })
     .where(and(eq(authTokens.userId, userId), isNull(authTokens.usedAt)))
@@ -478,7 +626,7 @@ export function setActive(actor: Actor, userId: number, active: boolean): User {
     if (u.id === actor.id) throw new Conflict("You cannot deactivate yourself", { code: "self_deactivate" })
     if (u.role === "admin") ensureOtherAdmin(u)
     revokeAccess(u.id, { apiKeys: true, passkeys: true })
-    stopRunningEntry(actor, u)
+    stopRunning(u, actor, "Account deactivated")
     for (const row of db.select().from(teamLeads).where(eq(teamLeads.userId, u.id)).all()) {
       logLeadChange(actor, row, "delete")
       db.delete(teamLeads).where(eq(teamLeads.id, row.id)).run()
@@ -495,32 +643,6 @@ export function setActive(actor: Actor, userId: number, active: boolean): User {
     reason: active ? "Account reactivated" : "Account deactivated",
   })
   return updated
-}
-
-function stopRunningEntry(actor: Actor, u: User) {
-  const open = db
-    .select()
-    .from(timeEntries)
-    .where(and(eq(timeEntries.userId, u.id), isNull(timeEntries.endAt), eq(timeEntries.isDeleted, false)))
-    .get()
-  if (!open) return
-  const before = snapshot("time_entry", open)
-  const now = utcnow()
-  const row = db
-    .update(timeEntries)
-    .set({ endAt: [now, open.startAt].sort().at(-1)!, updatedAt: now })
-    .where(eq(timeEntries.id, open.id))
-    .returning()
-    .get()
-  record({
-    entity: "time_entry",
-    row,
-    action: "update",
-    actor,
-    subjectUserId: u.id,
-    before,
-    reason: "Account deactivated",
-  })
 }
 
 /** Team lead rows are not in revisions.SNAPSHOT_KEYS (v1 logged them the same way). */
@@ -645,11 +767,19 @@ export function removePasskeys(actor: Actor, userId: number): number {
   return removed
 }
 
-/** The person can still accept an invitation (no password yet, active). */
+/**
+ * The person can still accept an invitation: active and never signed in. Someone who signs in with single
+ * sign-on or a passkey has no password, but an invitation link (which the administrator sees) would let the
+ * administrator choose one and sign in as them.
+ */
 export function ensureInvitable(actor: Actor, userId: number): User {
   requireAdmin(actor)
   const u = getUserOr404(userId)
-  if (!u.isActive || u.anonymizedAt || hasCredential(u.id))
+  const signedInBefore =
+    u.lastLoginAt != null ||
+    db.select({ id: account.id }).from(account).where(eq(account.userId, u.id)).get() != null ||
+    db.select({ id: passkey.id }).from(passkey).where(eq(passkey.userId, u.id)).get() != null
+  if (!u.isActive || u.anonymizedAt || hasCredential(u.id) || signedInBefore)
     throw new Conflict("This person has already signed in", { code: "invalid_state" })
   return u
 }
@@ -659,6 +789,7 @@ export function ensureInvitable(actor: Actor, userId: number): User {
 export function setEntitlement(actor: Actor, userId: number, year: number, days: number | null, note = ""): void {
   const u = getUserOr404(userId)
   if (!actor.isAdmin && !canAdjustBalance(actor, u)) throw new NotFound("User not found")
+  requireSomeoneElse(actor, u.id, "Someone else has to set your entitlement", { hrExempt: false })
   if (!Number.isInteger(year) || year < 1990 || year > 2100)
     throw new Validation("Invalid year", { fields: { year: "invalid" } })
   const row = db
@@ -749,9 +880,24 @@ function addYears(day: string, years: number): string {
   return Temporal.PlainDate.from(day).add({ years }).toString()
 }
 
+/** Retention runs from the employment end, or from the last time record if one is dated later. */
 export function retentionInfo(u: User): { allowedFrom: string | null } {
   if (!u.employmentEnd) return { allowedFrom: null }
-  return { allowedFrom: addYears(u.employmentEnd, getSetting("retention_years")) }
+  const lastEntry = db
+    .select({ at: max(timeEntries.startAt) })
+    .from(timeEntries)
+    .where(eq(timeEntries.userId, u.id))
+    .get()?.at
+  const lastAbsence = db
+    .select({ d: max(absences.endDate) })
+    .from(absences)
+    .where(eq(absences.userId, u.id))
+    .get()?.d
+  const last = [u.employmentEnd, lastEntry ? localDateOf(lastEntry, u.timezone) : null, lastAbsence]
+    .filter((d): d is string => !!d)
+    .sort()
+    .at(-1)!
+  return { allowedFrom: addYears(last, getSetting("retention_years")) }
 }
 
 /**
@@ -778,20 +924,14 @@ function anonymize(actor: Actor | null, userId: number, source: string): { docum
   if (allowedFrom > localToday(getSetting("default_timezone")))
     throw new Conflict(`The retention period runs until ${allowedFrom}`, { code: "retention", fields: { allowedFrom } })
 
-  let documentsRemoved = 0
   const docs = db
     .select({ id: attachments.id, storageName: attachments.storageName })
     .from(attachments)
     .innerJoin(absences, eq(absences.id, attachments.absenceId))
     .where(eq(absences.userId, u.id))
     .all()
-  for (const d of docs) {
-    const file = path.join(env.attachmentsDir, path.basename(d.storageName))
-    if (existsSync(file)) {
-      unlinkSync(file)
-      documentsRemoved++
-    }
-  }
+  const files = docs.map((d) => path.join(env.attachmentsDir, path.basename(d.storageName))).filter(existsSync)
+  const documentsRemoved = files.length
   if (docs.length)
     db.update(attachments)
       .set({ isDeleted: true, size: 0, filename: "removed" })
@@ -825,7 +965,6 @@ function anonymize(actor: Actor | null, userId: number, source: string): { docum
       emailVerified: false,
       twoFactorEnabled: false,
       notifyEmailOnCorrection: false,
-      mfaReenrolRequired: false,
       anonymizedAt: utcnow(),
     })
     .where(eq(users.id, u.id))
@@ -841,11 +980,13 @@ function anonymize(actor: Actor | null, userId: number, source: string): { docum
     reason: `Personal data anonymised after the retention period; ${documentsRemoved} documents removed`,
     source,
   })
+  // files last: a failing statement above rolls the transaction back with the documents still there
+  for (const file of files) unlinkSync(file)
   return { documentsRemoved }
 }
 
 /**
- * revDSG erasure: replace name and email in the person's own user-entity revisions. The append-only trigger
+ * revDSG erasure: replace name and email (and drop the birth date) in the person's own user-entity revisions. The append-only trigger
  * allows exactly this while app_state.revision_scrub holds the person's id (drizzle/0003_guards_v2.sql).
  */
 function scrubUserRevisions(userId: number, name: string, email: string): void {
@@ -859,7 +1000,14 @@ function scrubUserRevisions(userId: number, name: string, email: string): void {
     .where(and(eq(revisions.entity, "user"), eq(revisions.entityId, userId)))
     .all()
   const scrub = (snap: JsonObject | null): JsonObject | null =>
-    snap ? { ...snap, ...("name" in snap ? { name } : {}), ...("email" in snap ? { email } : {}) } : snap
+    snap
+      ? {
+          ...snap,
+          ...("name" in snap ? { name } : {}),
+          ...("email" in snap ? { email } : {}),
+          ...("birth_date" in snap ? { birth_date: null } : {}),
+        }
+      : snap
   for (const r of rows)
     db.update(revisions)
       .set({ before: scrub(r.before), after: scrub(r.after) })

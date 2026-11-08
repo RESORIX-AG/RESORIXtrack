@@ -7,19 +7,19 @@ import type { Locale } from "@/lib/locales"
 import { db } from "../db"
 import { apikey, passkey, session, twoFactor, type User, users } from "../db/schema"
 import { NotFound, Validation } from "../errors"
-import { iso, isValidTz, utcnow } from "../time"
+import { iso, utcnow } from "../time"
 import { apiKeyScopes } from "./api-keys"
 import { invalidateInvites } from "./invites"
 import { describeAgent, ownLoginHistory } from "./login-log"
 import { hasPasskey, mfaEnrolmentDue, mfaPolicyApplies, mfaRequiredFor } from "./mfa-policy"
 import { hasOidcLink, linkedProviders } from "./oidc"
 import type { Actor } from "./permissions"
+import { record, snapshot } from "./revisions"
 import { hasPassword } from "./user-auth"
 
 export interface ProfileInput {
   name: string
   locale: Locale
-  timezone: string
   timeFormat: "24h" | "12h"
   notifyEmailOnCorrection: boolean
 }
@@ -37,21 +37,24 @@ export function serializeProfile(u: User) {
 }
 
 export function updateProfile(actor: Actor, input: ProfileInput): User {
-  if (!isValidTz(input.timezone)) throw new Validation("Unknown timezone", { fields: { timezone: "invalid" } })
   const name = input.name.trim()
   if (!name) throw new Validation("Enter your name", { fields: { name: "required" } })
-  return db
+  const u = actor.user
+  const before = snapshot("user", u)
+  const updated = db
     .update(users)
     .set({
       name,
       locale: input.locale,
-      timezone: input.timezone,
       timeFormat: input.timeFormat,
       notifyEmailOnCorrection: input.notifyEmailOnCorrection,
     })
     .where(eq(users.id, actor.id))
     .returning()
     .get()
+  if (JSON.stringify(snapshot("user", updated)) !== JSON.stringify(before))
+    record({ entity: "user", row: updated, action: "update", actor, subjectUserId: u.id, before })
+  return updated
 }
 
 export function listSessions(actor: Actor, currentSessionId: number | null) {
@@ -141,7 +144,6 @@ export function securityState(actor: Actor) {
     mfaPolicy: mfaPolicyApplies(u),
     mfaLocked: mfaRequiredFor(u),
     mfaDue: mfaEnrolmentDue(u),
-    reenrolRequired: u.mfaReenrolRequired,
     oidcLinked: hasOidcLink(u.id),
     hasPasskey: hasPasskey(u.id),
     hasPassword: hasPassword(u.id),

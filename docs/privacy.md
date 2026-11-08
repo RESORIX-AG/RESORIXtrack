@@ -22,7 +22,7 @@ The privacy notice for employees (Art. 19 revDSG) is set under Settings → Priv
 - Managing time and vacation accounts, absences and approvals (OR 321c, 329 ff.).
 - Payroll input and monthly sign-off of timesheets.
 - Checking compliance with working-time limits (ArG).
-- [Project time recording for internal cost allocation, if the work log is used.]
+- [Project time recording for internal cost allocation, if projects are used.]
 - Security of the system (sign-in log).
 
 ### Data subjects
@@ -36,7 +36,7 @@ The privacy notice for employees (Art. 19 revDSG) is set under Settings → Priv
 |---|---|
 | Identity and contract | Name, email, team, role, employment start and end, pensum, work schedule, vacation entitlement, timezone, language, [date of birth, if used for minimum vacation] |
 | Working time | Start, end and breaks per day, daily totals, corrections with reasons, balances, overtime and Überzeit |
-| Work log | Descriptions of work, projects, customer references (if enabled) |
+| Projects | Project per time entry (if enabled) |
 | Absences | Vacation, training, other absences; **sick leave and doctor's notes (health data, sensitive under Art. 5 lit. c revDSG)** |
 | Approvals and sign-offs | Decisions, notes, sign-off date and signer |
 | Change log | Who changed which record, when, before and after, why |

@@ -16,3 +16,6 @@ playwright-report/
 
 # owner notes, never committed
 PLAN.md
+
+# design notes from AI planning sessions (local only)
+docs/superpowers/

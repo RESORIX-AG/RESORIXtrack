@@ -2,9 +2,9 @@ import { createFileRoute, redirect } from "@tanstack/react-router"
 import { z } from "zod"
 import { Page } from "@/components/app/page"
 import { Skeleton } from "@/components/ui/skeleton"
+import { projectsQuery } from "@/features/projects/api"
 import { teamScopeQuery } from "@/features/team/api"
 import { ProjectsPage } from "@/features/team/projects-page"
-import { projectsQuery } from "@/features/worklog/api"
 
 const day = z
   .string()

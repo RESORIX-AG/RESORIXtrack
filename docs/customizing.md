@@ -44,7 +44,7 @@ pnpm tsx scripts/i18n-set.ts --file keys.json   # { "ns.key": ["en", "de", "fr",
 pnpm i18n:check
 ```
 
-German uses Swiss spelling (ss) and "du"; French and Italian use "tu".
+German uses Swiss spelling (ss), Swiss terms (Absenz, Ferien, Pensum, Überzeit, visieren) and "du"; French and Italian use "tu".
 
 ### Add a language
 
@@ -55,7 +55,7 @@ German uses Swiss spelling (ss) and "du"; French and Italian use "tu".
 
 ## Public-holiday presets
 
-Calendars come from Swiss presets only: the 26 cantons (`CH-ZH` …) and local presets (`ch-fr-fribourg`), built on `date-holidays`; see `src/server/services/holiday-calendars.ts`. A calendar keeps its preset key in `region_code`; the worker adds next year's holidays every 1 October.
+Calendars come from canton presets only (`CH-ZH` …), built on `date-holidays`; RESORIXtrack keeps no holiday data of its own. See `src/server/services/holiday-presets.ts`. A calendar keeps its preset key in `region_code` and its ticked optional and commune days in `preset_days`; the worker adds next year's holidays every 1 October.
 
 ## Absence types
 

@@ -20,7 +20,9 @@ import { type ClockAction, clockAction, clockState, type OfflineClockAction, syn
 import { createEntry, deleteEntry, getEntry, listEntries, updateEntry } from "../services/entries"
 import { myHolidays } from "../services/holiday-calendars"
 import { withOutbox } from "../services/outbox"
-import { type Actor, isManager, requireView, visibleUserIds } from "../services/permissions"
+import { type Actor, isManager, requireView, seesDate, visibleUserIds } from "../services/permissions"
+import { projectMode } from "../services/project-time"
+import { visibleProjects } from "../services/projects"
 import { timesheet } from "../services/reports"
 import { getSetting } from "../services/settings"
 import { localToday, utcnow } from "../time"
@@ -154,6 +156,7 @@ const clockBody = z.object({
     .optional()
     .meta({ description: "Client-generated id (uuid). A repeated id is answered without changing anything." }),
   note: z.string().max(500).optional(),
+  ...S.projectFields,
 })
 
 const offlineKey = (userId: number, clientId: string) => `offline:${userId}:${clientId}`
@@ -164,7 +167,12 @@ function clockWithId(ctx: Ctx<unknown, z.output<typeof clockBody>>, action: Cloc
     const key = body.clientId ? offlineKey(actor.id, body.clientId) : null
     if (key && db.select({ k: appState.key }).from(appState).where(eq(appState.key, key)).get())
       return { ...clockState(actor.user), replayed: true }
-    const state = clockAction(actor, action, { at: body.at, note: body.note, source: ctx.caller.source })
+    const state = clockAction(actor, action, {
+      at: body.at,
+      note: body.note,
+      projectId: body.projectId,
+      source: ctx.caller.source,
+    })
     if (key)
       db.insert(appState)
         .values({ key, value: JSON.stringify({ id: body.clientId, status: "applied" }), updatedAt: utcnow() })
@@ -187,6 +195,12 @@ const CLOCK_PATHS = [
     "Clock out",
     `${IDEMPOTENT} A past \`at\` closes the entry there. An \`at\` more than 2 minutes in the future schedules the clock-out instead ("clock out later", at most 24 h after the clock-in, 422 too_late): the entry stays open, \`scheduledEnd\` is set and the entry closes at exactly that time.`,
   ],
+  [
+    "switch",
+    "switch",
+    "Switch project",
+    "Carry on working on another project (`projectId`): the running entry ends and the next one starts at the same second, so no break appears. Clocks in when idle; no-op when the project is the same.",
+  ],
   ["unschedule", "unschedule", "Cancel a scheduled clock-out", "No-op when nothing is scheduled."],
 ] as const
 
@@ -204,8 +218,12 @@ const clockActions = CLOCK_PATHS.map(([path, action, summary, description]) =>
   }),
 )
 
-const clockSyncAction = z.enum(["in", "out"])
-const ACTION_OF: Record<z.output<typeof clockSyncAction>, OfflineClockAction> = { in: "start", out: "stop" }
+const clockSyncAction = z.enum(["in", "out", "switch"])
+const ACTION_OF: Record<z.output<typeof clockSyncAction>, OfflineClockAction> = {
+  in: "start",
+  out: "stop",
+  switch: "switch",
+}
 
 const clockSync = endpoint({
   method: "POST",
@@ -223,6 +241,7 @@ const clockSync = endpoint({
           action: clockSyncAction,
           at: instantInput,
           note: z.string().max(500).optional(),
+          ...S.projectFields,
         }),
       )
       .min(1)
@@ -242,7 +261,13 @@ const clockSync = endpoint({
     const out = tx(() =>
       syncOffline(
         actor,
-        body.actions.map((a) => ({ id: a.clientId, action: ACTION_OF[a.action], at: a.at, note: a.note })),
+        body.actions.map((a) => ({
+          id: a.clientId,
+          action: ACTION_OF[a.action],
+          at: a.at,
+          note: a.note,
+          projectId: a.projectId,
+        })),
       ),
     )
     return { results: out.results.map(({ id, ...r }) => ({ clientId: id, ...r })), clock: out.clock }
@@ -272,7 +297,10 @@ const days = endpoint({
   handler: (ctx) => {
     const user = subject(ctx, ctx.query.userId)
     checkRange(ctx.query.from, ctx.query.to)
-    const list = computeDaysFrom(loadContext(user, ctx.query.from, ctx.query.to))
+    // a lead covering from a later day sees the days from then on
+    const list = computeDaysFrom(loadContext(user, ctx.query.from, ctx.query.to)).filter((d) =>
+      seesDate(ctx.actor, user, d.date),
+    )
     return {
       user: { id: user.id, name: user.name, timezone: user.timezone },
       from: ctx.query.from,
@@ -332,6 +360,7 @@ const createEntryEp = endpoint({
     startAt: instantInput,
     endAt: instantInput,
     note: z.string().max(500).default(""),
+    ...S.projectFields,
     reason,
   }),
   response: S.Entry,
@@ -350,6 +379,7 @@ const updateEntryEp = endpoint({
     startAt: instantInput.optional(),
     endAt: instantInput.optional(),
     note: z.string().max(500).optional(),
+    ...S.projectFields,
     reason,
   }),
   response: S.Entry,
@@ -430,6 +460,22 @@ const holidaysEp = endpoint({
     }
     const { calendar, source, team, year, years, holidays } = mine
     return { userId: actor.id, year, source, calendar, team, years, items: holidays }
+  },
+})
+
+const projectsEp = endpoint({
+  method: "GET",
+  path: "/projects",
+  tag: "Time",
+  summary: "Projects the owner can book time on",
+  description:
+    "Active company-wide projects and those of the owner's teams. `mode` is the company setting: `off` (no projects), `optional` or `required` (every work entry needs a project).",
+  scope: "time:read",
+  response: z.object({ mode: z.enum(["off", "optional", "required"]), items: z.array(S.Project) }),
+  handler: ({ actor }) => {
+    const mode = projectMode()
+    const items = mode === "off" ? [] : visibleProjects(actor)
+    return { mode, items: items.map(({ id, name, code, color }) => ({ id, name, code, color })) }
   },
 })
 
@@ -577,6 +623,7 @@ export const ENDPOINTS: Endpoint[] = [
   createEntryEp,
   updateEntryEp,
   deleteEntryEp,
+  projectsEp,
   balance,
   vacation,
   holidaysEp,

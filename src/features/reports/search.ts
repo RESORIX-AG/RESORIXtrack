@@ -26,9 +26,9 @@ export interface ReportSearch {
   project?: number
 }
 
-export function tabsFor(me: Me, worklogOn: boolean): ReportTab[] {
-  if (me.isManager) return REPORT_TABS.filter((t) => t !== "projects" || worklogOn)
-  return worklogOn ? ["timesheet", "projects"] : ["timesheet"]
+export function tabsFor(me: Me, projectsOn: boolean): ReportTab[] {
+  if (me.isManager) return REPORT_TABS.filter((t) => t !== "projects" || projectsOn)
+  return projectsOn ? ["timesheet", "projects"] : ["timesheet"]
 }
 
 /** Resolved parameters of the active tab (defaults: this month, oneself). */

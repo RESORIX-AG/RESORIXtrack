@@ -106,13 +106,15 @@ export function AccountView({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex justify-end">
         <PeriodNav
           label={String(data.year)}
           onPrev={() => onYear(data.year - 1)}
           onNext={() => onYear(data.year + 1 === thisYear ? undefined : data.year + 1)}
           onToday={() => onYear(undefined)}
           isCurrent={data.year === thisYear}
+          canPrev={data.year > data.firstYear}
+          canNext={data.year <= thisYear}
         />
       </div>
 
@@ -131,7 +133,7 @@ export function AccountView({
           <StatCard
             label={t("account.opening")}
             value={<Duration minutes={st.openingMin} balance />}
-            hint={t("account.opening_hint", { year: data.year })}
+            hint={t("account.opening_hint", { prev: data.year - 1 })}
           />
           <StatCard
             label={t("account.target_year")}

@@ -30,11 +30,11 @@
   "overnight_fix": "Correggi",
   "findings_one": "{count} segnalazione sulla legge sul lavoro",
   "findings_other": "{count} segnalazioni sulla legge sul lavoro",
-  "worklog_missing": "Diario di lavoro mancante per il {date}",
-  "worklog_add": "Aggiungi",
   "ring_today": "oggi",
   "day_off": "Oggi giorno libero",
   "legend_reached": "Tempo previsto raggiunto",
   "legend_worked": "Lavorato",
-  "legend_target": "Previsto"
+  "legend_target": "Previsto",
+  "project_missing": "Lavoro senza progetto il {date}",
+  "project_fix": "Assegna"
 }

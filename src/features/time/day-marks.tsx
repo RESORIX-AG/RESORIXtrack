@@ -4,9 +4,11 @@ import { ColorDot } from "@/components/app/status-badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { fmtDay } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
+import { useMe } from "@/lib/session"
 import { cn } from "@/lib/utils"
 import type { PeriodView } from "./api"
 import type { Day } from "./entry-dialog"
+import { wallClock } from "./lib"
 
 export type Finding = PeriodView["findings"][number]
 export type LockedMonth = PeriodView["lockedMonths"][string]
@@ -90,7 +92,9 @@ export function FindingsBadge({
 
 export function LockMark({ lock, className }: { lock: LockedMonth | undefined; className?: string }) {
   const { t, intl } = useI18n()
+  const tz = useMe().timezone
   if (!lock) return null
-  const text = t("time.locked_editor", { name: lock.signedBy ?? "?", date: fmtDay(lock.signedAt.slice(0, 10), intl) })
+  const date = fmtDay(wallClock(lock.signedAt, tz).date, intl)
+  const text = t("time.locked_editor", { name: lock.signedBy ?? "?", date })
   return <Lock className={cn("size-3.5 shrink-0 text-positive", className)} aria-label={text} />
 }

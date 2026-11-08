@@ -1,8 +1,7 @@
 /**
  * Session limits on top of Better Auth (as in v1): every session ends SESSION_ABSOLUTE_DAYS after sign-in,
- * however often it is used; a session without "keep me signed in" ends after SESSION_SHORT_IDLE_HOURS
- * without activity. Better Auth never refreshes such a session (it marks it with its `dont_remember`
- * cookie), so we slide `updatedAt` and `expiresAt` here.
+ * however often it is used; a session without "keep me signed in" (`session.short`, set when it is created)
+ * ends after SESSION_SHORT_IDLE_HOURS without activity, and we slide its `updatedAt` and `expiresAt` here.
  */
 import { eq } from "drizzle-orm"
 import { db } from "./db"
@@ -15,9 +14,16 @@ const SLIDE_EVERY_MS = 5 * 60_000
 
 export type SessionVerdict = "none" | "ok" | "revoked"
 
-export function applySessionPolicy(token: string, short: boolean, now = Date.now()): SessionVerdict {
+/** Better Auth gives a session without "keep me signed in" one day; remembered ones SESSION_REMEMBER_DAYS. */
+export function isShortSession(s: { createdAt: Date; expiresAt: Date }): boolean {
+  if (env.sessionRememberDays <= 1) return false
+  return s.expiresAt.getTime() - s.createdAt.getTime() <= 24 * HOUR_MS + 60_000
+}
+
+export function applySessionPolicy(token: string, now = Date.now()): SessionVerdict {
   const row = db.select().from(session).where(eq(session.token, token)).get()
   if (!row) return "none"
+  const { short } = row
   const absoluteEnd = row.createdAt.getTime() + env.sessionAbsoluteDays * 24 * HOUR_MS
   const idleEnd = row.updatedAt.getTime() + env.sessionShortIdleHours * HOUR_MS
   if (now >= absoluteEnd || (short && now >= idleEnd)) {

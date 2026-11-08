@@ -39,7 +39,7 @@ export function createDb(sqlite: Database.Database) {
 
 export const MIGRATIONS_DIR = path.resolve(process.env.MIGRATIONS_DIR ?? "drizzle")
 
-/** The database cannot be opened by this build (RESORIXtrack 1.x, or upgraded by a newer version). */
+/** The database cannot be opened by this build (upgraded by a newer version). */
 export class DatabaseVersionError extends Error {
   constructor(message: string) {
     super(message)
@@ -83,13 +83,8 @@ export function migrationStatus(sqlite: Database.Database, folder = MIGRATIONS_D
   }
 }
 
-/** Refuse a RESORIXtrack 1.x database and one migrated by a newer build. Reads only. */
+/** Refuse a database migrated by a newer build. Reads only. */
 export function assertUpgradable(sqlite: Database.Database, folder = MIGRATIONS_DIR): void {
-  if (hasTable(sqlite, "alembic_version"))
-    throw new DatabaseVersionError(
-      `${sqlite.name} is a RESORIXtrack 1.x database. Leave it unchanged and import it into a new data directory: ` +
-        "rt import-v1 --data <v1 data dir> (see docs/migration-from-v1.md).",
-    )
   const { unknown } = migrationStatus(sqlite, folder)
   if (unknown.length)
     throw new DatabaseVersionError(
@@ -129,7 +124,7 @@ export function rawSqlite(): Database.Database {
   return holder().sqlite
 }
 
-/** Replace the process-wide database without migrating it (tests, `rt migrate`, import-v1). */
+/** Replace the process-wide database without migrating it (tests, `rt migrate`). */
 export function setDatabase(sqlite: Database.Database): DB {
   const database = createDb(sqlite)
   globalThis.__rtDb = { sqlite, db: database }

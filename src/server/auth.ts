@@ -13,24 +13,30 @@ import { passkey } from "@better-auth/passkey"
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api"
+import { deleteSessionCookie } from "better-auth/cookies"
 import { genericOAuth, haveIBeenPwned, twoFactor } from "better-auth/plugins"
 import { tanstackStartCookies } from "better-auth/tanstack-start"
-import { and, eq } from "drizzle-orm"
+import type { BetterAuthPlugin } from "better-auth/types"
+import { eq } from "drizzle-orm"
 import { isRecord } from "@/lib/guards"
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip"
 import { db } from "./db"
 import * as schema from "./db/schema"
-import { env } from "./env"
+import { assertProductionConfig, env } from "./env"
 import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, verifyPassword } from "./password"
 import { breakGlassAllowed, consumeBreakGlass } from "./services/break-glass"
 import { invalidateInvites, issueInviteToken } from "./services/invites"
 import { loginThrottled, recordLoginAttempt, recordThrottled, resetThrottled } from "./services/login-log"
 import { queueMail } from "./services/mail"
-import { mfaRequiredFor } from "./services/mfa-policy"
+import { mfaEnrolmentDue, mfaRequiredFor, passwordAloneRefused } from "./services/mfa-policy"
 import { OIDC_PROVIDER, oidcDecision, oidcEnabled } from "./services/oidc"
+import { consumePasskeyRegistration, passkeyRegistrationAllowed } from "./services/passkey-step-up"
 import { hasPassword, passwordProblem } from "./services/user-auth"
-import { applySessionPolicy } from "./session-policy"
+import { applySessionPolicy, isShortSession } from "./session-policy"
 import { utcnow } from "./time"
+
+// the web server has no start hook of its own: refuse to serve with a weak SECRET_KEY or BACKUP_PASSWORD
+assertProductionConfig()
 
 /** Separate key for Better Auth derived from SECRET_KEY (cookie signing, 2FA secret encryption). */
 const authSecret = createHash("sha256").update(`resorixtrack-auth:${env.secretKey}`).digest("hex")
@@ -85,6 +91,85 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "")
 const emailOf = (ctx: { body?: unknown }) => str(bodyOf(ctx).email).trim().toLowerCase().slice(0, 254)
 
 const userById = (id: number) => db.select().from(schema.users).where(eq(schema.users.id, id)).get()
+
+const oidcOnly = (email: string) => env.oidc.only && oidcEnabled() && !breakGlassAllowed(email)
+
+/**
+ * HTTP routes the app never calls from the browser. Server functions reach the same endpoints through
+ * `auth.api` (which skips this list) after their own checks: password confirmation, the company switch,
+ * key expiry and scopes, revocation by an administrator, the profile rules and the change log.
+ */
+const DISABLED_PATHS = [
+  "/api-key/create",
+  "/api-key/update",
+  "/api-key/delete",
+  "/api-key/get",
+  "/api-key/list",
+  "/change-password",
+  "/set-password",
+  "/update-user",
+  "/change-email",
+  "/delete-user",
+  // unlinking the password would end the password step-up for API keys and passkeys
+  "/list-accounts",
+  "/unlink-account",
+  "/link-social",
+  "/oauth2/link",
+]
+
+/**
+ * Sign-in log for password sign-ins. A plugin, so it runs after the two-factor plugin's hook: by then a
+ * pending second factor has removed the session and the attempt is logged when the code is verified.
+ */
+const passwordSignInLog = {
+  id: "rt-password-sign-in-log",
+  hooks: {
+    after: [
+      {
+        matcher: (ctx) => ctx.path === "/sign-in/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          const headers = ctx.request?.headers ?? ctx.headers
+          const email = emailOf(ctx)
+          const newSession = ctx.context.newSession
+          const returned: unknown = ctx.context.returned
+          if (newSession) {
+            const userId = Number(newSession.user.id)
+            const u = userById(userId)
+            // required two-factor: someone with a passkey or single sign-on but no TOTP signs in with those
+            if (u && passwordAloneRefused(u) && !mfaEnrolmentDue(u) && !breakGlassAllowed(email)) {
+              deleteSessionCookie(ctx)
+              await ctx.context.internalAdapter.deleteSession(newSession.session.token)
+              ctx.context.setNewSession(null)
+              recordLoginAttempt({ email, userId, success: false, reason: "mfa_required", headers })
+              throw fail("FORBIDDEN", "USE_STRONG_SIGN_IN", "Sign in with your passkey or single sign-on")
+            }
+            consumeBreakGlass(email)
+            const reason = requestContext.getStore()?.signInReason ?? "ok"
+            recordLoginAttempt({ email, userId, success: true, reason, headers })
+            return
+          }
+          if (!(returned instanceof APIError)) return // second factor pending
+          if (returned.body?.code === "OIDC_ONLY" || returned.status === "TOO_MANY_REQUESTS") return
+          const inactive = returned.body?.code === "INACTIVE"
+          recordLoginAttempt({ email, success: false, reason: inactive ? "inactive" : "invalid_password", headers })
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin
+
+/** "Trust this device" would skip the second factor for 30 days; the app never offers it. */
+const noTrustedDevices = {
+  id: "rt-no-trusted-devices",
+  hooks: {
+    before: [
+      {
+        matcher: (ctx) => ctx.path === "/two-factor/verify-totp" || ctx.path === "/two-factor/verify-backup-code",
+        handler: createAuthMiddleware(async (ctx) => ({ context: { body: { ...bodyOf(ctx), trustDevice: false } } })),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin
 
 const oidcPlugins = oidcEnabled()
   ? [
@@ -144,6 +229,9 @@ const betterAuthInstance = betterAuth({
     },
   }),
   user: { modelName: "users" },
+  disabledPaths: DISABLED_PATHS,
+  // a stolen database must not yield live reset links
+  verification: { storeIdentifier: { default: "plain", overrides: { "reset-password:": "hashed" } } },
   account: {
     accountLinking: {
       enabled: true,
@@ -168,6 +256,7 @@ const betterAuthInstance = betterAuth({
     expiresIn: env.sessionRememberDays * 86400,
     updateAge: 86400,
     cookieCache: { enabled: false },
+    additionalFields: { short: { type: "boolean", required: false, defaultValue: false, input: false } },
   },
   emailAndPassword: {
     enabled: true,
@@ -224,7 +313,9 @@ const betterAuthInstance = betterAuth({
         before: async (session) => {
           const u = userById(Number(session.userId))
           if (!u?.isActive) throw new APIError("FORBIDDEN", { message: "Account inactive", code: "INACTIVE" })
-          return { data: session }
+          // "don't remember me" is decided here, from the lifetime Better Auth gives the session, not later
+          // from a cookie the client could leave out
+          return { data: { ...session, short: isShortSession(session) } }
         },
         after: async (session) => {
           db.update(schema.users)
@@ -234,32 +325,17 @@ const betterAuthInstance = betterAuth({
         },
       },
     },
-    user: {
-      update: {
-        after: async (user) => {
-          // enrolling two-factor satisfies the re-enrolment request from import-v1
-          if (user.twoFactorEnabled)
-            db.update(schema.users)
-              .set({ mfaReenrolRequired: false })
-              .where(and(eq(schema.users.id, Number(user.id)), eq(schema.users.mfaReenrolRequired, true)))
-              .run()
-        },
-      },
-    },
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       const headers = ctx.request?.headers ?? ctx.headers
       // every lookup of the current session (also auth.api.getSession) passes here first
       const token = await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret)
-      if (token) {
-        const short = await ctx.getSignedCookie(ctx.context.authCookies.dontRememberToken.name, ctx.context.secret)
-        applySessionPolicy(token, Boolean(short))
-      }
+      if (token) applySessionPolicy(token)
       switch (ctx.path) {
         case "/sign-in/email": {
           const email = emailOf(ctx)
-          if (env.oidc.only && oidcEnabled() && !requestContext.getStore()?.signInReason && !breakGlassAllowed(email))
+          if (oidcOnly(email) && requestContext.getStore()?.signInReason !== "setup")
             throw fail("FORBIDDEN", "OIDC_ONLY", "Sign in with single sign-on")
           if (loginThrottled(email, headers)) {
             recordThrottled(email, headers)
@@ -269,6 +345,8 @@ const betterAuthInstance = betterAuth({
         }
         case "/request-password-reset": {
           const email = emailOf(ctx)
+          // no password (and no invitation in its place) around the identity provider; `rt reset-password` is the way in
+          if (oidcOnly(email)) throw fail("FORBIDDEN", "OIDC_ONLY", "Sign in with single sign-on")
           if (loginThrottled(email, headers) || resetThrottled(email, headers))
             throw fail("TOO_MANY_REQUESTS", "TOO_MANY_REQUESTS", "Too many attempts. Wait a few minutes.")
           return
@@ -282,15 +360,17 @@ const betterAuthInstance = betterAuth({
         case "/reset-password": {
           const resetToken = str(bodyOf(ctx).token)
           const v = resetToken
-            ? db
-                .select()
-                .from(schema.verification)
-                .where(eq(schema.verification.identifier, `reset-password:${resetToken}`))
-                .get()
-            : undefined
+            ? await ctx.context.internalAdapter.findVerificationValue(`reset-password:${resetToken}`)
+            : null
           const u = v ? userById(Number(v.value)) : undefined
           const problem = passwordProblem(str(bodyOf(ctx).newPassword), u?.email ?? "")
           if (problem) throw fail("BAD_REQUEST", `PASSWORD_${problem.toUpperCase()}`, "Choose a stronger password")
+          return
+        }
+        case "/passkey/generate-register-options": {
+          const session = await getSessionFromCtx(ctx)
+          if (!session || !passkeyRegistrationAllowed(Number(session.user.id)))
+            throw fail("FORBIDDEN", "PASSWORD_CONFIRMATION_REQUIRED", "Confirm your password first")
           return
         }
         case "/two-factor/disable": {
@@ -307,25 +387,6 @@ const betterAuthInstance = betterAuth({
       const newSession = ctx.context.newSession
       const returned: unknown = ctx.context.returned
       switch (ctx.path) {
-        case "/sign-in/email": {
-          const email = emailOf(ctx)
-          if (
-            returned instanceof APIError &&
-            (returned.body?.code === "OIDC_ONLY" || returned.status === "TOO_MANY_REQUESTS")
-          )
-            return
-          if (newSession) {
-            consumeBreakGlass(email)
-            const reason = requestContext.getStore()?.signInReason ?? "ok"
-            recordLoginAttempt({ email, userId: Number(newSession.user.id), success: true, reason, headers })
-          } else if (isRecord(returned) && returned.twoFactorRedirect === true) {
-            return // logged when the second factor is verified
-          } else {
-            const inactive = returned instanceof APIError && returned.body?.code === "INACTIVE"
-            recordLoginAttempt({ email, success: false, reason: inactive ? "inactive" : "invalid_password", headers })
-          }
-          return
-        }
         case "/two-factor/verify-totp":
         case "/two-factor/verify-backup-code": {
           // only the sign-in step (a pending two-factor challenge cookie), not enrolment while signed in
@@ -335,6 +396,8 @@ const betterAuthInstance = betterAuth({
           )
           if (!challenge) return
           if (newSession) {
+            // a break-glass sign-in is one sign-in, also when it ends with the second factor
+            consumeBreakGlass(newSession.user.email)
             recordLoginAttempt({
               email: newSession.user.email,
               userId: Number(newSession.user.id),
@@ -353,6 +416,16 @@ const betterAuthInstance = betterAuth({
         case "/request-password-reset": {
           if (returned instanceof APIError) return
           recordLoginAttempt({ email: emailOf(ctx), success: false, reason: "reset_requested", headers })
+          return
+        }
+        case "/passkey/verify-registration": {
+          if (returned instanceof APIError) return
+          const session = await getSessionFromCtx(ctx)
+          const u = session ? userById(Number(session.user.id)) : undefined
+          if (!u) return
+          consumePasskeyRegistration(u.id)
+          // a passkey signs in without password or second factor: the person should know about every new one
+          queueMail({ email: u.email, name: u.name, locale: u.locale }, "passkey_added")
           return
         }
         case "/passkey/verify-authentication": {
@@ -382,17 +455,22 @@ const betterAuthInstance = betterAuth({
   },
   plugins: [
     twoFactor({ issuer: "RESORIXtrack", backupCodeOptions: { amount: 10, length: 10 } }),
+    passwordSignInLog,
+    noTrustedDevices,
     apiKey({
       defaultPrefix: "rt_",
       enableMetadata: true,
       rateLimit: { enabled: false },
       permissions: { defaultPermissions: { time: ["read"] } },
+      keyExpiration: { defaultExpiresIn: 30 * 86_400_000, maxExpiresIn: 365 },
     }),
     // passkeys are phishing-resistant on their own: a passkey sign-in never asks for TOTP
     passkey({
       rpID: new URL(env.baseUrl || "http://localhost").hostname,
       rpName: "RESORIXtrack",
       origin: env.baseUrl || undefined,
+      // a passkey replaces password and second factor, so the authenticator must check its owner (PIN, biometrics)
+      authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
     }),
     ...oidcPlugins,
     ...(env.pwnedCheck ? [haveIBeenPwned()] : []),

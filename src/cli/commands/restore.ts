@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util"
 import { env } from "@/server/env"
 import { BackupCryptoError } from "@/server/services/backup-crypto"
-import { backupPassword, openBackup, restoreBackup, V1BackupError } from "@/server/services/backups"
+import { backupPassword, openBackup, restoreBackup } from "@/server/services/backups"
 import { ask, confirm } from "../prompt"
 
 export default {
@@ -22,11 +22,6 @@ export default {
     try {
       opened = await openBackup(file, password)
     } catch (err) {
-      if (err instanceof V1BackupError) {
-        console.error(err.message)
-        console.error("The folder contains decrypted data: delete it after the import.")
-        return 3
-      }
       if (err instanceof BackupCryptoError) {
         console.error(err.message)
         return 1
@@ -40,9 +35,7 @@ export default {
       if (!(await confirm("Continue?"))) return 1
     }
     const r = restoreBackup(opened)
-    console.log(
-      `Restored. ${r.attachments} attachments.${r.safetyCopy ? ` Previous database kept as ${r.safetyCopy}.` : ""}`,
-    )
+    console.log(`Restored. ${r.attachments} attachments.`)
     console.log("Start the app again; pending migrations run automatically.")
     return 0
   },

@@ -43,7 +43,7 @@
     "pending_absence": "Demandes en attente",
     "not_employed": "Pas employé",
     "already_signed": "Déjà validé",
-    "worklog_incomplete": "Activités incomplètes"
+    "projects_missing": "Projets manquants"
   },
   "sign": "Valider",
   "select_person": "Sélectionner {name}",
@@ -63,6 +63,6 @@
     "pending_absence": "Décide d'abord des demandes d'absence ouvertes.",
     "not_employed": "Pas employé·e ce mois-ci.",
     "already_signed": "Déjà validé.",
-    "worklog_incomplete": "Le journal de travail manque certains jours."
+    "projects_missing": "Une partie du travail n'a pas de projet."
   }
 }

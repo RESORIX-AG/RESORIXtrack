@@ -1,7 +1,7 @@
 {
   "title": "Conto ore",
-  "opening": "Saldo iniziale",
-  "opening_hint": "Riportato nel {year}",
+  "opening": "Riporto",
+  "opening_hint": "Saldo a fine {prev}",
   "target_year": "Ore previste",
   "until_yesterday": "Fino a ieri",
   "worked_year": "Ore lavorate",

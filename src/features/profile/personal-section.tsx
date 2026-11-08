@@ -1,4 +1,5 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import { useRouter } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { z } from "zod"
 import { SettingsFooter, SettingsGroup } from "@/components/app/settings"
@@ -9,18 +10,19 @@ import { errorFields } from "@/lib/guards"
 import { useI18n } from "@/lib/i18n"
 import { LOCALES } from "@/lib/i18n-core"
 import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/locales"
+import { refreshSession } from "@/lib/session"
 import { changePassword, profileQuery, saveProfile } from "./api"
 
 export function PersonalSection() {
   const { t, tError } = useI18n()
   const qc = useQueryClient()
+  const router = useRouter()
   const { data } = useSuspenseQuery(profileQuery)
   const p = data.profile
   const form = useAppForm({
     defaultValues: {
       name: p.name,
       locale: isSupportedLocale(p.locale) ? p.locale : DEFAULT_LOCALE,
-      timezone: p.timezone,
       timeFormat: p.timeFormat,
       notifyEmailOnCorrection: p.notifyEmailOnCorrection,
     },
@@ -28,21 +30,12 @@ export function PersonalSection() {
       const timeFormat = value.timeFormat === "12h" ? "12h" : "24h"
       const failed = await failure(saveProfile({ data: { ...value, timeFormat } }))
       if (failed) {
-        const message = tError(failed.error)
-        if (errorFields(failed.error)?.timezone)
-          formApi.setFieldMeta("timezone", (m) => ({
-            ...m,
-            isBlurred: true,
-            errorMap: { ...m.errorMap, onServer: message },
-          }))
-        else toast.error(message)
+        toast.error(tError(failed.error))
         return
       }
       toast.success(t("common.saved"))
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["profile"] }),
-        qc.invalidateQueries({ queryKey: ["bootstrap"] }),
-      ])
+      formApi.reset(value)
+      await Promise.all([qc.invalidateQueries({ queryKey: ["profile"] }), refreshSession(qc, router)])
     },
   })
   return (
@@ -61,15 +54,6 @@ export function PersonalSection() {
               />
             )}
           </form.AppField>
-          <form.AppField name="timezone">
-            {(f) => (
-              <f.ComboboxField
-                row
-                label={t("profile.timezone")}
-                options={data.timezones.map((tz) => ({ value: tz, label: tz.replace(/_/g, " ") }))}
-              />
-            )}
-          </form.AppField>
           <form.AppField name="timeFormat">
             {(f) => (
               <f.SegmentedField
@@ -85,13 +69,7 @@ export function PersonalSection() {
           <form.AppField name="notifyEmailOnCorrection">
             {(f) => <f.SwitchField row label={t("profile.notify_corrections")} />}
           </form.AppField>
-          <form.Subscribe selector={(st) => st.isDirty}>
-            {(dirty) => (
-              <SettingsFooter note={dirty ? t("admin.settings.unsaved") : undefined}>
-                <form.SubmitButton variant={dirty ? "default" : "outline"}>{t("common.save")}</form.SubmitButton>
-              </SettingsFooter>
-            )}
-          </form.Subscribe>
+          <form.SaveBar placement="group" />
         </SettingsGroup>
       </FormRoot>
     </form.AppForm>

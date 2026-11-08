@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { db } from "@/server/db"
 import { balanceAdjustments, teams, users } from "@/server/db/schema"
 import { serializeAdjustment } from "@/server/services/accounts"
-import { type Actor, isManager, requireView } from "@/server/services/permissions"
+import { type Actor, clampFrom, isManager, requireView } from "@/server/services/permissions"
 import { scopeUsers } from "@/server/services/signoffs"
 import { localToday } from "@/server/time"
 
@@ -44,7 +44,7 @@ export function yearAdjustments(actor: Actor, userId: number, year: number) {
       and(
         eq(balanceAdjustments.userId, user.id),
         eq(balanceAdjustments.isDeleted, false),
-        gte(balanceAdjustments.effectiveDate, `${year}-01-01`),
+        gte(balanceAdjustments.effectiveDate, clampFrom(actor, user, `${year}-01-01`)),
         lte(balanceAdjustments.effectiveDate, `${year}-12-31`),
       ),
     )

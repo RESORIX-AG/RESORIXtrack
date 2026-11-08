@@ -17,12 +17,21 @@ import { fmtDateTime } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import { useMe } from "@/lib/session"
 import { cn } from "@/lib/utils"
+import { projectsQuery } from "../projects/api"
 import { disputeEntryFn, entryHistoryQuery } from "./api"
 import type { Entry } from "./entry-dialog"
 
-const FIELDS = ["kind", "start_at", "end_at", "note", "is_deleted"] as const
+const FIELDS = ["kind", "start_at", "end_at", "project_id", "note", "is_deleted"] as const
 /** Reasons the app writes itself for clocking; not worth showing as a reason. */
-export const HIDDEN_REASONS = new Set(["clock", "clock (offline sync: earlier time)"])
+const APP_REASONS = new Set([
+  "clock",
+  "clock (offline sync: earlier time)",
+  "clock (project switched)",
+  "scheduled clock-out cancelled",
+])
+
+/** Reasons the app writes itself when clocking; the change shows what happened, so they are not shown. */
+export const isAppReason = (r: string) => APP_REASONS.has(r) || r.startsWith("clock-out scheduled for ")
 
 export function EntryHistoryDialog({
   open,
@@ -38,6 +47,7 @@ export function EntryHistoryDialog({
   self: boolean
 }) {
   const disputeMessageId = useId()
+  const disputeFormId = useId()
   const { t, tError, intl } = useI18n()
   const me = useMe()
   const qc = useQueryClient()
@@ -45,12 +55,15 @@ export function EntryHistoryDialog({
   const [message, setMessage] = useState("")
   const [disputing, setDisputing] = useState(false)
   const hour12 = me.timeFormat === "12h"
+  const projects = useQuery({ ...projectsQuery(true), enabled: open }).data?.items ?? []
+  const projectNames = new Map(projects.map((p) => [p.id, p.name]))
   const fmt = (k: string, v: unknown) => {
     if (v == null || v === "") return "–"
     if (k === "is_deleted") return v ? t("common.yes") : t("common.no")
     const s = typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v)
     if (k === "start_at" || k === "end_at") return fmtDateTime(s, { intl, tz, hour12 })
     if (k === "kind") return t(`time.kind.${s}`)
+    if (k === "project_id") return projectNames.get(Number(s)) ?? `#${s}`
     return s
   }
   const rows = q.data ?? []
@@ -72,7 +85,7 @@ export function EntryHistoryDialog({
   const send = () => {
     if (!entry) return
     if (!message.trim()) {
-      document.getElementById("dispute-message")?.focus()
+      document.getElementById(disputeMessageId)?.focus()
       return
     }
     dispute.mutate({ id: entry.id, message: message.trim() })
@@ -87,12 +100,22 @@ export function EntryHistoryDialog({
       }}
       title={t("time.history_title")}
       footer={
-        self && byOther && !disputing ? (
+        disputing ? (
+          <>
+            <Button type="button" variant="ghost" onClick={() => setDisputing(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" form={disputeFormId} disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
+              {t("time.send_dispute")}
+            </Button>
+          </>
+        ) : self && byOther ? (
           <Button
             variant="outline"
             onClick={() => {
               setDisputing(true)
-              requestAnimationFrame(() => document.getElementById("dispute-message")?.focus())
+              requestAnimationFrame(() => document.getElementById(disputeMessageId)?.focus())
             }}
           >
             <MessageSquareWarning data-icon="inline-start" />
@@ -149,7 +172,7 @@ export function EntryHistoryDialog({
                       <ins className="no-underline">{fmt(k, r.after?.[k])}</ins>
                     </p>
                   ))}
-                  {r.reason && !HIDDEN_REASONS.has(r.reason) ? <p className="text-pretty">“{r.reason}”</p> : null}
+                  {r.reason && !isAppReason(r.reason) ? <p className="text-pretty">“{r.reason}”</p> : null}
                 </div>
               </li>
             )
@@ -158,6 +181,7 @@ export function EntryHistoryDialog({
       )}
       {disputing ? (
         <form
+          id={disputeFormId}
           className="mt-5 flex flex-col gap-3 border-t pt-5"
           onSubmit={(e) => {
             e.preventDefault()
@@ -175,15 +199,6 @@ export function EntryHistoryDialog({
               onChange={(e) => setMessage(e.target.value)}
             />
           </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setDisputing(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? <Spinner data-icon="inline-start" /> : null}
-              {t("time.send_dispute")}
-            </Button>
-          </div>
         </form>
       ) : null}
     </ResponsiveDialog>

@@ -20,6 +20,8 @@ import { EditorSheet, SheetSubmit, useAction } from "../ui"
 
 type Row = ReturnType<typeof listAbsenceTypesAdmin>[number]
 const FLAGS = ["requiresApproval", "employeeCanRequest", "allowsAttachments", "creditsTime", "deductsVacation"] as const
+/** Fixed once a type is in use: past absences were counted by them. */
+const COUNTING = new Set<string>(["creditsTime", "deductsVacation"])
 const col = tableHelper<Row>()
 
 function Flag({ on, label }: { on: boolean; label: string }) {
@@ -56,7 +58,7 @@ export function AbsenceTypesSection() {
       col.accessor(f, {
         header: () => t(`admin.types.flags.${f}`),
         enableSorting: false,
-        meta: { hideOnMobile: true, className: "text-center w-24" },
+        meta: { hideOnMobile: true, className: "text-center w-24 whitespace-normal" },
         cell: (c) => (
           <span className="flex justify-center">
             <Flag on={c.getValue()} label={t(`admin.types.flags.${f}`)} />
@@ -108,10 +110,11 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
     },
     { success: t("common.saved"), silentError: true, onSuccess: onClose },
   )
-  const remove = useAction(() => deleteAbsenceTypeFn({ data: { id: row!.id } }), {
+  const remove = useAction((id: number) => deleteAbsenceTypeFn({ data: { id } }), {
     success: t("admin.types.deleted"),
     onSuccess: onClose,
   })
+  const inUse = (row?.usage ?? 0) > 0
   type Values = Omit<Row, "id" | "usage">
   const defaults: Values = {
     key: row?.key ?? "",
@@ -210,6 +213,8 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
               {(f) => (
                 <f.SelectField
                   label={t("admin.types.category")}
+                  disabled={inUse}
+                  description={inUse ? t("admin.types.counting_locked") : undefined}
                   options={(["vacation", "sick", "other"] as const).map((c) => ({
                     value: c,
                     label: t(`admin.types.categories.${c}`),
@@ -221,7 +226,9 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
           <div className="flex flex-col gap-3">
             {FLAGS.map((f) => (
               <form.AppField key={f} name={f}>
-                {(fl) => <fl.SwitchField label={t(`admin.types.flags_long.${f}`)} />}
+                {(fl) => (
+                  <fl.SwitchField label={t(`admin.types.flags_long.${f}`)} disabled={inUse && COUNTING.has(f)} />
+                )}
               </form.AppField>
             ))}
             <form.AppField name="isActive">{(f) => <f.SwitchField label={t("common.active")} />}</form.AppField>
@@ -237,7 +244,7 @@ function TypeSheet({ row, nextSort, onClose }: { row: Row | null; nextSort: numb
           onOpenChange={setConfirm}
           title={t("admin.types.delete_title", { name: absenceLabel(row) })}
           confirmLabel={t("common.delete")}
-          onConfirm={() => remove.mutateAsync(undefined)}
+          onConfirm={() => remove.mutateAsync(row.id)}
         />
       ) : null}
     </EditorSheet>

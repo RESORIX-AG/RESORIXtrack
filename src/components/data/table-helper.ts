@@ -45,7 +45,7 @@ declare module "@tanstack/react-table" {
     /** label used in the stacked mobile layout when the header is not a plain string */
     mobileLabel?: string
     className?: string
-    /** column width (CSS length) in virtual tables, which lay out with fixed widths; others share the rest */
+    /** column width (CSS length); any width lays the table out fixed, columns without one share the rest */
     width?: string
   }
 }

@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { FORMATS, REPORT_KINDS, renderReport } from "@/features/reports/render"
 import { isOneOf } from "@/lib/guards"
-import { auth } from "@/server/auth"
 import { toAppError } from "@/server/errors"
-import { loadActor } from "@/server/services/permissions"
+import { requestActor } from "@/server/request-actor"
 
 const fail = (status: number, code: string, message: string) => Response.json({ error: { code, message } }, { status })
 
@@ -16,9 +15,8 @@ export const Route = createFileRoute("/api/reports/$kind")({
     handlers: {
       GET: async ({ request, params }) => {
         try {
-          const session = await auth.api.getSession({ headers: request.headers })
-          const actor = session ? loadActor(Number(session.user.id)) : null
-          if (!actor?.user.isActive) return fail(401, "unauthorized", "Please sign in")
+          const actor = await requestActor(request.headers)
+          if (!actor) return fail(401, "unauthorized", "Please sign in")
           const kind = params.kind
           if (!isOneOf(REPORT_KINDS, kind)) return fail(404, "not_found", "Unknown report")
           const search = new URL(request.url).searchParams

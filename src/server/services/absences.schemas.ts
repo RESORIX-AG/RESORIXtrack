@@ -37,6 +37,8 @@ export const previewInput = z.object({
   endDate: dayString.nullish(),
   startHalf: half.default("full"),
   endHalf: half.default("full"),
+  /** The request being edited: its own days are not counted twice. */
+  excludeId: z.number().int().positive().nullish(),
 })
 
 export const listInput = z

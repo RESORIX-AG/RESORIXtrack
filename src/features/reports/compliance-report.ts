@@ -3,10 +3,19 @@ import type { z } from "zod"
 import { db } from "@/server/db"
 import { teams } from "@/server/db/schema"
 import { Forbidden, Validation } from "@/server/errors"
-import { countFindings, type Finding, overtimeYear, periodFindings, yearFindings } from "@/server/services/compliance"
+import {
+  countFindings,
+  coveredFindings,
+  type Finding,
+  load,
+  overtimeYear,
+  periodFindings,
+  yearFindings,
+} from "@/server/services/compliance"
 import { type Actor, isManager } from "@/server/services/permissions"
-import { getSetting } from "@/server/services/settings"
+import { getSetting, settingsTimeline } from "@/server/services/settings"
 import { scopeUsers } from "@/server/services/signoffs"
+import { addDays, weekStart } from "@/server/time"
 import { complianceReportInput } from "./compliance-report.schemas"
 
 export { complianceReportInput }
@@ -40,11 +49,18 @@ export function complianceReport(actor: Actor, raw: z.input<typeof complianceRep
           .map((t) => [t.id, t.name])
       : [],
   )
+  const settings = settingsTimeline()
   const rows = people.map((u) => {
-    const findings = [...periodFindings(u, input.from, input.to), ...yearFindings(u, year)].sort(
+    // a lead covering from a later day sees no findings about days before it
+    // one load for the period checks, the year's Überzeit and its vacation checks
+    const from = [input.from, `${year}-01-01`].sort()[0]
+    const to = [input.to, `${year}-12-31`].sort()[1]
+    const loaded = load(u, weekStart(addDays(from, -7)), addDays(weekStart(addDays(to, 7)), 6), { settings })
+    const o = overtimeYear(u, year, loaded)
+    const all = [...periodFindings(u, input.from, input.to, loaded), ...yearFindings(u, year, o, loaded)]
+    const findings = coveredFindings(actor, u, all).sort(
       (a, b) => when(a).localeCompare(when(b)) || SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
     )
-    const o = overtimeYear(u, year)
     return {
       userId: u.id,
       name: u.name,

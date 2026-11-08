@@ -14,7 +14,7 @@ For everyone who records time, plus a section for team leads. Administrators: [a
 
 <p><img src="screenshots/employee-dark-home.png" alt="Dashboard" width="760"></p>
 
-Clock, today and this week against your target, **time balance** (+ overtime, − deficit), **vacation left**, upcoming absences, work log for today, labour-law findings.
+Clock, today and this week against your target, **time balance** (+ overtime, − deficit), **vacation left**, upcoming absences, labour-law findings, and a reminder when recent work has no project.
 
 Totals of a week or month (worked, target, difference) count complete days only. Today is marked *in progress*; its time so far is shown as *+ h:mm today*.
 
@@ -22,12 +22,13 @@ The theme follows your device. Pick System, Light or Dark with the sun/moon butt
 
 ### Clocking
 
-- **Clock in**, **Clock out**. A break is simply a clock-out; clock in again when it ends. The clock is on every page.
+- **Clock in**, **Clock out** (key S). A break is simply a clock-out; clock in again when it ends. The clock is on every page.
 - Keys: **S** clock in or out (when no field is focused). **⌘K** / **Ctrl K** search.
 - Offline: punches are stored and synced with their original time.
 - **Other time**: clock in up to 48 h back, or clock out at a chosen time. A past time closes the entry there. A future time (up to 24 h after the clock-in) clocks you out automatically then: the card shows *Clocks out automatically at 17:30* with *Cancel*; *Clock out now* ends the entry earlier. Such entries are marked manual.
 - Legal minimums: when your company enforces them, clocking in is refused until the minimum break (15 min after 5½ h, 30 min after 7 h, 60 min after 9 h of work) or the daily rest of 11 h is complete; the message says from when you can clock in. If you did work, add the entry under *My time*; it gets the usual finding.
 - Forgot to clock out: the dashboard warns you; clock out, then fix the end time under *My time*. A reminder email follows after a set number of hours.
+- **Project** (if your company uses projects): pick it before you clock in, on the dashboard (*Clock in on*) or in the top bar. Nothing is preselected: each clock-in uses up the choice. While working, picking another project switches: the running entry ends and the next one starts at the same second, so no break appears.
 
 ### Report sick
 
@@ -40,21 +41,23 @@ The theme follows your device. Pick System, Light or Dark with the sun/moon butt
 
 Week timeline or month grid with worked, target and difference per day.
 
-- **Add entry** or click an empty part of a day: start, end, note.
+- **Add entry** or click an empty part of a day: start, end, project, note.
 - Click an entry to edit or delete. Edits on past days need a reason, deleting always needs one; everything is in the change history. Deleted entries can be restored.
 - **Edited / manual**: entered or changed by hand. **Changed by someone else**: corrected by your lead or HR; open *History* and *Dispute* if you disagree.
 - A **signed-off month** is read-only. Ask your lead or HR; HR can reopen it.
-- With **simplified recording** you enter a daily total instead of start and end.
+- With **simplified recording** you enter a daily total instead of start and end. Several totals per day, one per project, are added one after the other.
 - Labour-law findings (short break, rest, Sunday work …) are hints, never blocks; only a clock-in can be refused when the company enforces the minimum break and daily rest. See [compliance.md](compliance.md).
 
-Times are shown in your timezone (Profile) and stored in UTC.
+Times are shown in the timezone your employer set for you (usually Europe/Zurich), also when you travel; clocking in and out records the exact moment wherever you are.
 
-## Work log
+## Projects
 
-If your company uses it, describe what you did: free text, a **project**, a **customer reference**, or a mix. Each item has a duration or a from-to time.
+If your company uses projects, every entry says which **project** its time was spent on. The week view shows each block in its project's colour and code; one day often reads as one block split by project.
 
-- Dashboard: *What did you do today?*. Week view: the *Work log* card per day.
-- **Required** mode: each day must reach the set share of worked time. Short days are flagged, you are reminded after clocking out, and the month cannot be signed off until done. Today is never flagged.
+- Switch projects with the clock (see *Clocking*) or split an entry under *My time*.
+- Days before today with work but no project are marked with a dot; the dashboard links to the first one and marks the entries that need a project (*Assign* opens the first).
+- **Required** mode: every work entry needs a project before the month can be signed off. Today is never flagged.
+- Without exact times (2 h meeting, sometime today): only with simplified recording, as a daily total per project. Full recording keeps start and end by law (ArGV 1 Art. 73).
 
 ## Absences
 
@@ -92,7 +95,7 @@ Your **timesheet** as PDF (to sign), XLSX or CSV.
 
 | Section | What |
 |---|---|
-| Personal | Language, timezone, 24 or 12-hour time, email on corrections |
+| Personal | Language, 24 or 12-hour time, email on corrections |
 | Password | Change it; signs out other devices and revokes API keys |
 | Two-factor | TOTP app (Aegis, 1Password, Microsoft Authenticator …) plus 10 backup codes. May be required by your company. |
 | Passkeys | Sign in with Face ID, Touch ID, Windows Hello or a security key; no code needed |
@@ -116,7 +119,7 @@ Leads, deputies during their period, and HR (for everyone) see the **Team** sect
 
 <p><img src="screenshots/lead-dark-team.png" alt="Team overview" width="760"></p>
 
-Who is in now, worked against target, findings, sign-off status, the team calendar and month balances. Name a **deputy** for a period or open-ended; they get your rights while current. Click a person to open their page.
+Who is in now, worked against target, findings, sign-off status, the team calendar and month balances. Your administrator names **deputies** for a period or open-ended; they get your rights while current. A deputy with a start date sees the team's data from that day on only. Click a person to open their page.
 
 ### Approvals
 
@@ -130,14 +133,14 @@ Tabs: **Time** (add, edit, delete; reason required, person notified, can dispute
 
 ### Projects
 
-**Team → Projects**: create and edit your teams' projects (name, code up to 30 characters, colour, description); deactivate finished ones. They stay on past items and in reports.
+**Team → Projects**: create and edit your teams' projects (name, code up to 30 characters, colour, description); deactivate finished ones. They stay on past entries and in reports.
 
 ### Month sign-off
 
 <p><img src="screenshots/lead-dark-team_signoff.png" alt="Month sign-off" width="760"></p>
 
 1. Open the previous month. Check target, worked and difference per person; correct first if needed.
-2. Blockers: month not over, clock running, open requests, work log incomplete.
+2. Blockers: month not over, clock running, open requests, work without a required project.
 3. Select people and **Sign off**. The month becomes read-only for everyone.
 
 Your own month is signed off by another lead or HR. Later corrections: HR reopens, you sign off again.

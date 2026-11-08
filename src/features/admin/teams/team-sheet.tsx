@@ -12,7 +12,15 @@ import { applyServerErrors } from "@/components/form/server-errors"
 import { Button } from "@/components/ui/button"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Combobox } from "@/components/ui/combobox"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandHint,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldLabel } from "@/components/ui/field"
 
@@ -42,13 +50,19 @@ export function TeamSheet({
   const { data: teams } = useSuspenseQuery(teamsQuery)
   const { data: refs } = useSuspenseQuery(userRefsQuery)
   const team = teamId != null ? teams.find((x) => x.id === teamId) : undefined
+  const companyCalendar = refs.calendars.find((c) => c.isDefault)
+  // the company calendar is stored as null so the team follows a later change of the default
+  const teamCalendarId = (value: string) => {
+    const id = Number(value) || null
+    return id === companyCalendar?.id ? null : id
+  }
   const [confirmDelete, setConfirmDelete] = useState(false)
   const save = useAction(
     (v: { name: string; color: string; holidayCalendarId: string; memberIds: number[] }) =>
       saveTeamFn({
         data: {
           id: teamId,
-          input: { name: v.name.trim(), color: v.color, holidayCalendarId: Number(v.holidayCalendarId) || null },
+          input: { name: v.name.trim(), color: v.color, holidayCalendarId: teamCalendarId(v.holidayCalendarId) },
           memberIds: v.memberIds,
         },
       }),
@@ -58,7 +72,7 @@ export function TeamSheet({
       onSuccess: (r) => (teamId == null ? onCreated(r.id) : onClose()),
     },
   )
-  const remove = useAction(() => deleteTeamFn({ data: { id: teamId! } }), {
+  const remove = useAction((id: number) => deleteTeamFn({ data: { id } }), {
     success: t("admin.teams.deleted"),
     onSuccess: onClose,
   })
@@ -66,7 +80,7 @@ export function TeamSheet({
     defaultValues: {
       name: team?.name ?? "",
       color: team?.color ?? BRAND_DEFAULT,
-      holidayCalendarId: String(team?.holidayCalendarId ?? 0),
+      holidayCalendarId: String(team?.holidayCalendarId ?? companyCalendar?.id ?? ""),
       memberIds: team?.members.map((m) => m.id) ?? [],
     },
     validators: {
@@ -133,12 +147,17 @@ export function TeamSheet({
               <div className="sm:col-span-2">
                 <form.AppField name="holidayCalendarId">
                   {(f) => (
-                    <f.SelectField
+                    <f.ComboboxField
                       label={t("admin.teams.calendar")}
-                      options={[
-                        { value: "0", label: t("admin.teams.calendar_default") },
-                        ...refs.calendars.map((c) => ({ value: String(c.id), label: c.name })),
-                      ]}
+                      options={refs.calendars.map((c) => ({
+                        value: String(c.id),
+                        label: c.name,
+                        badge: c.isDefault ? (
+                          <StatusBadge tone="brand" className="shrink-0">
+                            {t("admin.holidays.default")}
+                          </StatusBadge>
+                        ) : undefined,
+                      }))}
                     />
                   )}
                 </form.AppField>
@@ -167,7 +186,7 @@ export function TeamSheet({
         title={t("admin.teams.delete_title", { name: team?.name ?? "" })}
         description={t("admin.teams.delete_message")}
         confirmLabel={t("common.delete")}
-        onConfirm={() => remove.mutateAsync(undefined)}
+        onConfirm={() => (teamId == null ? undefined : remove.mutateAsync(teamId))}
       />
     </EditorSheet>
   )
@@ -198,20 +217,15 @@ function MemberPicker({
   return (
     <Command className="rounded-lg border">
       <CommandInput placeholder={t("common.search_person")} />
-      <CommandList className="max-h-64">
+      {/* fixed height (every 2rem row, capped) so filtering never resizes the box */}
+      <CommandList className="max-h-none min-h-17" style={{ height: `min(16rem, ${people.length * 2 + 0.5}rem)` }}>
         <CommandEmpty>{t("common.no_matches")}</CommandEmpty>
         <CommandGroup>
           {sorted.map((p) => {
             const on = selected.has(p.id)
             const from = p.teamId != null && p.teamId !== teamId ? teamName.get(p.teamId) : null
             return (
-              <CommandItem
-                key={p.id}
-                value={`${p.name} ${p.email}`}
-                onSelect={() => toggle(p.id)}
-                aria-selected={on}
-                data-checked={on}
-              >
+              <CommandItem key={p.id} value={`${p.name} ${p.email}`} onSelect={() => toggle(p.id)} aria-selected={on}>
                 <span
                   className={cn(
                     "flex size-4 shrink-0 items-center justify-center rounded-sm border",
@@ -221,12 +235,11 @@ function MemberPicker({
                   {on ? <Check className="size-3" /> : null}
                 </span>
                 <span className="truncate">{p.name}</span>
-                {from && on ? (
-                  <span className="ml-auto truncate text-xs text-warning">
-                    {t("admin.teams.moves_from", { team: from })}
-                  </span>
+                {from ? (
+                  <CommandHint className={cn("shrink truncate", on && "text-warning")}>
+                    {on ? t("admin.teams.moves_from", { team: from }) : from}
+                  </CommandHint>
                 ) : null}
-                {from && !on ? <span className="ml-auto truncate text-xs text-muted-foreground">{from}</span> : null}
               </CommandItem>
             )
           })}

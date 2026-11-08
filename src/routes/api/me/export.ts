@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { auth } from "@/server/auth"
+import { requestActor } from "@/server/request-actor"
 import { exportPersonalData } from "@/server/services/privacy"
 import { localToday } from "@/server/time"
 
@@ -8,11 +8,11 @@ export const Route = createFileRoute("/api/me/export")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const session = await auth.api.getSession({ headers: request.headers })
-        if (!session)
+        const actor = await requestActor(request.headers)
+        if (!actor)
           return Response.json({ error: { code: "unauthorized", message: "Please sign in" } }, { status: 401 })
-        const user = session.user as { id: string | number; timezone?: string }
-        const body = JSON.stringify(exportPersonalData(Number(user.id)), null, 2)
+        const user = actor.user
+        const body = JSON.stringify(exportPersonalData(user.id), null, 2)
         return new Response(body, {
           headers: {
             "Content-Type": "application/json; charset=utf-8",

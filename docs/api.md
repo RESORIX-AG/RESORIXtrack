@@ -19,11 +19,11 @@ A key acts as its owner, narrowed to its scopes; it never sees more than the own
 
 | Scope | Allows |
 |---|---|
-| `time:read` | Clock state, days, time entries, balance, public holidays |
+| `time:read` | Clock state, days, time entries, projects, balance, public holidays |
 | `time:write` | Clock actions, offline sync, create, change and delete entries |
 | `absences:read` | Vacation account, absence types, absences |
 | `absences:write` | Request and cancel absences |
-| `reports:read` | Reports; people list for leads and HR |
+| `reports:read` | Reports, people list, and reading other people's entries, absences and accounts (leads and HR, within their scope) |
 
 Send `X-Client: desktop/<version>` to mark entries as "Desktop app" in the change history.
 
@@ -67,6 +67,7 @@ curl -X POST $B/auth/token -H "Content-Type: application/json" -d '{
 
 - Dates `YYYY-MM-DD` in the person's timezone; instants ISO 8601 UTC (`…Z`); durations in minutes.
 - Clock actions are idempotent and accept an optional past time (`at`) for offline sync. A clock-in with a future time is refused. A clock-out with a time more than 2 minutes ahead (at most 24 h after the clock-in) is scheduled instead: the entry stays open, `GET /clock` shows it as `scheduledEnd`, the entry closes at exactly that time; `POST /clock/unschedule` cancels the plan. A break is simply a clock-out followed by a clock-in.
+- Projects: `GET /projects` lists what the owner can book on and the company's `mode` (`off`, `optional`, `required`). Entries, `POST /clock/in` and offline sync take `projectId`. `POST /clock/switch` changes the project while working: the running entry ends and the next starts at the same second (no break, no legal-rest check). A clock-in never fails over its project: an inactive one is dropped.
 - When the company enforces the legal minimums, a clock-in answers `409 break_required` (fields `required`, `taken`, `earliest`) or `409 rest_required` (fields `requiredMin`, `earliest`); `earliest` is the instant from which clocking in is allowed.
 - Out-of-scope ids answer `404`.
 

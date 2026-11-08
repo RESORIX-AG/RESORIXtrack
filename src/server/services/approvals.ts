@@ -8,7 +8,7 @@ import { type AbsenceStatus, users } from "../db/schema"
 import { absenceTypesById, isSensitive } from "./absence-types"
 import { absencesInRange, clippedDays, pendingForApprover, serializeAbsences, usersById } from "./absences"
 import { vacationAccount } from "./accounts"
-import { type Actor, canViewUser } from "./permissions"
+import { type Actor, canViewUser, seesDate } from "./permissions"
 import { ABSENT_COLOR } from "./team-calendar"
 
 export interface Overlap {
@@ -58,7 +58,7 @@ export function teamOverlaps(actor: Actor, userId: number, teamId: number | null
     .map((a) => {
       const u = byId.get(a.userId)!
       const t = types.get(a.typeId)!
-      const hidden = isSensitive(t.category) && !canViewUser(actor, u)
+      const hidden = isSensitive(t.category) && !(canViewUser(actor, u) && seesDate(actor, u, a.endDate))
       return {
         userId: u.id,
         name: u.name,

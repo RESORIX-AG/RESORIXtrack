@@ -39,7 +39,7 @@ export const Route = createFileRoute("/_app/reports")({
       deps,
       me,
       dayOf(new Date(), me.timezone),
-      tabsFor(me, context.bootstrap.company.worklogMode !== "off"),
+      tabsFor(me, context.bootstrap.company.projectMode !== "off"),
     )
     const report = context.queryClient.prefetchQuery(reportQuery(r))
     await context.queryClient.ensureQueryData(teamScopeQuery)

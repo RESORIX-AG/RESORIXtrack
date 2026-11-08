@@ -10,6 +10,7 @@ RESORIXtrack is `AGPL-3.0-or-later` ([LICENSING.md](../LICENSING.md)). It ships 
 | Apache-2.0 | Keep license and `NOTICE`; state changes | Shipped unmodified with their files |
 | MPL-2.0 | Provide source of modified MPL files | Not modified (lightningcss, build tool) |
 | CC-BY-4.0 | Attribution | caniuse-lite data, used at build time |
+| FSO / swisstopo geodata (free use, source required) | Name the source | Canton outlines in `src/components/app/canton-map-paths.ts`, derived from the FSO generalised boundaries 2024 (© swisstopo) as packaged by swiss-maps 4.5.0 (BSD-3-Clause, Interactive Things); the file names its source |
 | SIL OFL 1.1 | Ship the font license with the font; no sale of the font alone | Inter (`@fontsource-variable/inter`) ships with its license, unmodified |
 | Base image `node:26-slim` (Debian) | Debian package licenses | Unmodified official image; licenses in `/usr/share/doc/*/copyright` |
 | Caddy (Apache-2.0) | As above | Optional, pulled as the unmodified official image |

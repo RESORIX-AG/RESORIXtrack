@@ -12,6 +12,7 @@ import { authClient } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
 
 export const Route = createFileRoute("/_auth/forgot")({
+  staticData: { titleKey: "auth.forgot_title" },
   loader: ({ context }) => context.queryClient.ensureQueryData(authConfigQuery),
   component: Forgot,
 })

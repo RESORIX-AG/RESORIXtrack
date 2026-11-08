@@ -18,6 +18,7 @@ export function ReasonDialog({
   hint,
   submitLabel,
   rows = 3,
+  initialReason = "",
   onSubmit,
   onClose,
 }: {
@@ -27,12 +28,14 @@ export function ReasonDialog({
   hint?: ReactNode
   submitLabel: string
   rows?: number
+  /** a reason already typed elsewhere (e.g. the editor the dialog opened from) */
+  initialReason?: string
   onSubmit: (reason: string) => Promise<void>
   onClose: () => void
 }) {
   const id = useId()
   const { t, tError } = useI18n()
-  const [reason, setReason] = useState("")
+  const [reason, setReason] = useState(initialReason)
   const [missing, setMissing] = useState(false)
   const submit = async () => {
     if (!reason.trim()) {

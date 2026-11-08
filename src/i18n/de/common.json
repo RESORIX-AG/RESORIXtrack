@@ -81,5 +81,7 @@
     "hex": "Hex"
   },
   "choose_file": "Datei wählen",
-  "remove": "Entfernen"
+  "remove": "Entfernen",
+  "results": "Ergebnisse",
+  "note_no_personal": "Bleibt jahrelang bei den Zeitdaten. Keine Gesundheits- oder anderen persönlichen Angaben."
 }

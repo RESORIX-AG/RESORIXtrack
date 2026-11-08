@@ -68,6 +68,7 @@ export function TimePanel({
     lockedMonths: p.lockedMonths,
     reasonRequired: p.reasonRequired,
     canEdit: p.canEdit,
+    entries: p.entries,
   }
 
   const columns = [

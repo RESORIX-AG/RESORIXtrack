@@ -34,7 +34,7 @@ describe("reports", () => {
     expect(ts.user).toMatchObject({ name: "Anna Muster", team: "Team A", timezone: "Europe/Zurich" })
     expect(ts.days).toHaveLength(31)
     expect(ts.entries["2026-10-14"]).toEqual([
-      { kind: "work", start: "08:00", end: "12:00", edited: true, note: "Kunde" },
+      { id: expect.any(Number), kind: "work", start: "08:00", end: "12:00", edited: true, note: "Kunde" },
     ])
     expect(ts.entries["2026-10-15"]).toBeUndefined()
     expect(ts.summary.workedMin).toBe(240)
@@ -105,25 +105,20 @@ describe("reports", () => {
     })
   })
 
-  it("project hours by project, customer and person", () => {
+  it("project hours by project and person", () => {
     const p = db.insert(s.projects).values({ name: "Website", code: "WEB" }).returning().get()
-    db.insert(s.workLogs)
-      .values([
-        { userId: org.anna.id, date: "2026-10-14", projectId: p.id, minutes: 120 },
-        { userId: org.anna.id, date: "2026-10-14", customerRef: "ACME", minutes: 60 },
-        { userId: org.ben.id, date: "2026-10-14", projectId: p.id, minutes: 30 },
-        { userId: org.ben.id, date: "2026-10-15", projectId: p.id, minutes: 999, isDeleted: true },
-        { userId: org.carl.id, date: "2026-10-14", projectId: p.id, minutes: 45 },
-      ])
-      .run()
+    const on = (userId: number, from: string, to: string, over = {}) =>
+      makeEntry(userId, `2026-10-14T${from}:00.000000Z`, `2026-10-14T${to}:00.000000Z`, { projectId: p.id, ...over })
+    on(org.anna.id, "06:00", "08:00")
+    on(org.anna.id, "09:00", "10:00", { projectId: null })
+    on(org.ben.id, "06:00", "06:30")
+    on(org.ben.id, "07:00", "23:00", { isDeleted: true })
+    on(org.carl.id, "06:00", "06:45")
     const r = projectHours(loadActor(org.lead.id), { from: "2026-10-01", to: "2026-10-31" })
-    expect(r.projects.map((x) => `${x.kind}:${x.name}:${x.minutes}`)).toEqual([
-      "project:Website:150",
-      "customer:ACME:60",
-    ])
+    expect(r.projects.map((x) => `${x.kind}:${x.name}:${x.minutes}`)).toEqual(["project:Website:150"])
     expect(r.projects[0].people.map((x) => x.minutes)).toEqual([120, 30])
-    expect(r.totalMin).toBe(210)
-    expect(projectHours(loadActor(org.anna.id), { from: "2026-10-01", to: "2026-10-31" }).totalMin).toBe(180)
+    expect(r.totalMin).toBe(150)
+    expect(projectHours(loadActor(org.anna.id), { from: "2026-10-01", to: "2026-10-31" }).totalMin).toBe(120)
   })
 
   it("raw export for leads (own teams, incl. deleted) and HR only", () => {

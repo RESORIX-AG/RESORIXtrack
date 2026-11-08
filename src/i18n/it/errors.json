@@ -47,7 +47,11 @@
     "derived": "Risulta dall'ora di inizio e di fine",
     "too_many": "Troppi file",
     "not_employed": "Al di fuori del rapporto di lavoro",
-    "inactive": "Non più attivo"
+    "inactive": "Non più attivo",
+    "before_current": "Prima dell'inizio delle condizioni attuali",
+    "overlaps_earlier": "Si sovrappone all'impiego precedente",
+    "before_end": "Deve seguire la fine dell'impiego",
+    "after_start": "Dopo l'inizio dell'impiego"
   },
   "period_signed_off": "Questo mese è stato firmato e non può più essere modificato.",
   "signoff_immutable": "Le firme non possono essere modificate.",
@@ -78,13 +82,10 @@
   "mfa_enabled": "L'autenticazione a due fattori è già attiva.",
   "mfa_disabled": "L'autenticazione a due fattori non è attiva.",
   "tokens_disabled": "I token API personali sono stati disattivati dall'amministratore.",
-  "worklog_incomplete": "Il diario di lavoro non copre la quota richiesta del tempo lavorato.",
-  "worklog_off": "Il diario di lavoro è disattivato per questa azienda.",
   "project_taken": "Esiste già un progetto con questo nome.",
   "lead_exists": "Questa persona ha già questo ruolo per questo team in questo periodo.",
   "type_not_requestable": "Questo tipo viene registrato dal tuo responsabile del team o da HR.",
   "already_running": "La timbratura è già in corso.",
-  "worklog_overlap": "Si sovrappone a un'altra voce di questo giorno.",
   "invalid_password": "La password è errata.",
   "password_too_short": "Usa almeno 10 caratteri.",
   "password_too_long": "Usa al massimo 256 caratteri.",
@@ -96,5 +97,15 @@
   "mfa_required": "Per il tuo account l'autenticazione a due fattori è obbligatoria.",
   "invalid_admin_password": "La tua password non è corretta.",
   "backup_password_missing": "Imposta BACKUP_PASSWORD (almeno 12 caratteri) sul server.",
-  "type_in_use": "Questo tipo è in uso. Disattivalo invece di eliminarlo."
+  "type_in_use": "Questo tipo è in uso. Disattivalo invece di eliminarlo.",
+  "projects_missing": "Parte del lavoro non ha un progetto.",
+  "projects_off": "I progetti sono disattivati per questa azienda.",
+  "not_for_yourself": "Deve farlo qualcun altro per te: un altro amministratore, HR o il tuo responsabile del team.",
+  "type_in_use_counting": "Questo tipo è in uso. Categoria e conteggio non possono più cambiare; crea invece un nuovo tipo.",
+  "oidc_only": "Accedi con il single sign-on.",
+  "mfa_enrolment_required": "Configura prima l'autenticazione a due fattori.",
+  "before_cover": "Vedi e modifichi i dati di questa persona dal giorno in cui è iniziato il tuo ruolo di responsabile.",
+  "terms_order": "Le condizioni attuali iniziano più tardi; scegli quel giorno o dopo.",
+  "schedule_gap": "Dall'inizio dell'impiego deve valere un orario.",
+  "calendar_in_use": "Questo calendario è valso per giorni passati e non può più essere eliminato."
 }

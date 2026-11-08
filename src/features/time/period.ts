@@ -5,6 +5,8 @@ export interface TimeSearch {
   date?: string
   add?: boolean
   deleted?: boolean
+  /** "project": mark the work without a project (the dashboard's reminder links here) */
+  fix?: "project"
 }
 
 export function periodParams(userId: number | null | undefined, s: TimeSearch, today: string): PeriodInput {

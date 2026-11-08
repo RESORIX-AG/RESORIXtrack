@@ -15,7 +15,7 @@ Self-hosted time tracking for small and mid-sized companies: clocking, time and 
 - Time account (target from the work schedule, worked, balance) and vacation account (entitlement, carry-over, half days).
 - Absence requests with a calendar of holidays and existing absences; sick report in one click with optional doctor's note.
 - Public holidays page: the calendar that applies to you (personal, team or company default), read-only.
-- Work log: what was done, as free text, project or customer reference; optional or required per company.
+- Projects on time entries: each entry says which project its time was spent on; switch projects on the clock without a break; optional or required per company.
 - Own edits are allowed and logged; corrections by others are marked and can be disputed.
 
 **Team leads and HR**
@@ -56,14 +56,13 @@ docker compose --profile tls up -d --build
 docker compose exec app rt setup-code
 ```
 
-Open `https://<your-domain>`, enter the setup code and follow the wizard. Coming from 1.x: [docs/migration-from-v1.md](docs/migration-from-v1.md).
+Open `https://<your-domain>`, enter the setup code and follow the wizard.
 
 ## Documentation
 
 | Guide | For |
 |---|---|
 | [Installation](docs/installation.md) | Docker, HTTPS, configuration, updates |
-| [Migration from 1.x](docs/migration-from-v1.md) | Moving a v1 installation to v2 |
 | [Administrator guide](docs/admin-guide.md) | Setting up the company, administration pages |
 | [User manual](docs/user-manual.md) | Employees and team leads |
 | [Security](docs/security.md) | Protection model, operator checklist |

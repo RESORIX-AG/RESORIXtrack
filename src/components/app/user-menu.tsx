@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { clearCachedPages } from "@/features/clock/register-sw"
 import { authClient } from "@/lib/auth-client"
 import { initials } from "@/lib/format"
 import { useT } from "@/lib/i18n"
@@ -66,6 +67,7 @@ export function UserMenu() {
         <DropdownMenuItem
           onClick={async () => {
             await authClient.signOut()
+            await clearCachedPages()
             qc.clear()
             await router.navigate({ to: "/login" })
           }}

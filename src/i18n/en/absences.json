@@ -134,7 +134,7 @@
     "reject_title": "Decline request",
     "reject_title_n": "Decline {count} requests",
     "decision_note": "Note",
-    "decision_note_help": "Optional, sent to the person",
+    "decision_note_help": "Optional, sent to the person. No health details.",
     "vacation_after": "{n} left after",
     "vacation_left": "Vacation left",
     "exceeds": "Exceeds vacation",

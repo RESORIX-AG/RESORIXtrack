@@ -34,6 +34,7 @@
   "reason_placeholder": "z. B. Einstempeln vergessen",
   "reason_other_help": "{name} wird informiert.",
   "tz_hint": "Zeiten in {tz}",
+  "delete_title": "Diesen Eintrag löschen?",
   "deleted": "Eintrag gelöscht",
   "confirm_delete": "Eintrag löschen",
   "history_title": "Änderungsverlauf",
@@ -57,7 +58,8 @@
     "start_at": "Beginn",
     "end_at": "Ende",
     "note": "Notiz",
-    "is_deleted": "Gelöscht"
+    "is_deleted": "Gelöscht",
+    "project_id": "Projekt"
   },
   "by_other": "von jemand anderem",
   "dispute": "Beanstanden",
@@ -81,5 +83,15 @@
   "reason_required": "Begründung (erforderlich)",
   "reason_delete_help": "Löschen braucht immer eine Begründung; sie bleibt in der Änderungshistorie.",
   "night_credit": "Nachtgutschrift",
-  "surcharge_credit": "Gutschrift Sonn-/Feiertag"
+  "surcharge_credit": "Gutschrift Sonn-/Feiertag",
+  "project": "Projekt",
+  "no_project": "Kein Projekt",
+  "choose_project": "Projekt wählen",
+  "inactive": "inaktiv",
+  "project_required": "Wähle ein Projekt.",
+  "project_missing": "Arbeit ohne Projekt",
+  "project_fix_hint_one": "1 Eintrag braucht noch ein Projekt. Er ist unten markiert.",
+  "project_fix_hint_other": "{count} Einträge brauchen noch ein Projekt. Sie sind unten markiert.",
+  "project_fix_done": "Alle Einträge haben ein Projekt.",
+  "daily_total_help": "Mehrere Totale pro Tag, eines pro Projekt, werden nacheinander erfasst."
 }

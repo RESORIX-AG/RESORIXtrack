@@ -9,6 +9,7 @@ import { auth } from "../auth"
 import { db } from "../db"
 import { apikey } from "../db/schema"
 import { Forbidden, TooManyRequests, Unauthorized } from "../errors"
+import { mfaEnrolmentDue } from "../services/mfa-policy"
 import { loadActor } from "../services/permissions"
 import { getSetting } from "../services/settings"
 import type { Caller, Scope } from "./endpoint"
@@ -42,12 +43,17 @@ export async function authenticate(request: Request): Promise<Caller> {
   if (!getSetting("api_tokens_enabled"))
     throw new Forbidden("API keys are disabled for this company", { code: "api_keys_disabled" })
   const res = await auth.api.verifyApiKey({ body: { key: token } })
-  if (!res.valid || !res.key) throw new Unauthorized("Invalid or expired API key")
+  // every key the app issues expires; one without an expiry did not come through the app
+  if (!res.valid || !res.key || res.key.expiresAt == null) throw new Unauthorized("Invalid or expired API key")
   const keyId = Number(res.key.id)
   const wait = keyBuckets.take(String(keyId))
   if (wait) throw new RateLimited(wait)
   const actor = loadActor(Number(res.key.referenceId))
   if (!actor.user.isActive || actor.user.anonymizedAt) throw new Unauthorized("Invalid or expired API key")
+  if (mfaEnrolmentDue(actor.user))
+    throw new Forbidden("Two-factor authentication is required: set it up in the web app first", {
+      code: "mfa_required",
+    })
   db.update(apikey)
     .set({ requestCount: sql`coalesce(${apikey.requestCount}, 0) + 1` })
     .where(eq(apikey.id, keyId))

@@ -19,8 +19,8 @@ export interface DemoPerson {
 
 export const TEAMS: Record<string, string> = {
   "RF Engineering": "#35a1cc",
-  "Software & DSP": "#8f7ad1",
-  Operations: "#e0a23b",
+  "Software & DSP": "#8a63d2",
+  Operations: "#d4882b",
 }
 
 export const PEOPLE: DemoPerson[] = [
@@ -145,12 +145,12 @@ export const RUNNING = "tim.baumann"
 export const SIGNED_TEAM = "RF Engineering"
 
 export const PROJECTS: { name: string; code: string; team: string | null; color: string }[] = [
-  { name: "Internal & administration", code: "INT", team: null, color: "#62656b" },
-  { name: "Training", code: "TRN", team: null, color: "#3fb37f" },
+  { name: "Internal & administration", code: "INT", team: null, color: "#6b7280" },
+  { name: "Training", code: "TRN", team: null, color: "#2e9e6b" },
   { name: "Antenna tuner v2", code: "AT2", team: "RF Engineering", color: "#35a1cc" },
-  { name: "EMC lab", code: "EMC", team: "RF Engineering", color: "#e0a23b" },
-  { name: "DSP firmware", code: "DSP", team: "Software & DSP", color: "#8f7ad1" },
-  { name: "Customer portal", code: "WEB", team: "Software & DSP", color: "#d52b1e" },
+  { name: "EMC lab", code: "EMC", team: "RF Engineering", color: "#d4882b" },
+  { name: "DSP firmware", code: "DSP", team: "Software & DSP", color: "#8a63d2" },
+  { name: "Customer portal", code: "WEB", team: "Software & DSP", color: "#d0525b" },
 ]
 
 export const WORK_NOTES = [

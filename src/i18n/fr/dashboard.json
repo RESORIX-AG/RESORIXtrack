@@ -30,11 +30,11 @@
   "overnight_fix": "Corriger",
   "findings_one": "{count} remarque (loi sur le travail)",
   "findings_other": "{count} remarques (loi sur le travail)",
-  "worklog_missing": "Journal de travail manquant pour le {date}",
-  "worklog_add": "Compléter",
   "ring_today": "aujourd'hui",
   "day_off": "Libre aujourd'hui",
   "legend_reached": "Objectif atteint",
   "legend_worked": "Travaillé",
-  "legend_target": "Objectif"
+  "legend_target": "Objectif",
+  "project_missing": "Travail sans projet le {date}",
+  "project_fix": "Attribuer"
 }

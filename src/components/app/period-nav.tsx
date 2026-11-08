@@ -13,6 +13,8 @@ export function PeriodNav({
   onNext,
   onToday,
   isCurrent,
+  canPrev = true,
+  canNext = true,
   startTransition,
 }: {
   label: string
@@ -20,6 +22,9 @@ export function PeriodNav({
   onNext: () => void
   onToday?: () => void
   isCurrent?: boolean
+  /** false at the first or last period with anything to show */
+  canPrev?: boolean
+  canNext?: boolean
   /** from `useTransition()` when the period is local state, to dim the old period while the next loads */
   startTransition?: TransitionStartFunction
 }) {
@@ -29,18 +34,37 @@ export function PeriodNav({
     stepPeriod(router, dir, change, { from: e.currentTarget, start: startTransition })
   return (
     <div className="flex items-center gap-1">
-      {onToday && !isCurrent ? (
-        <Button variant="ghost" onClick={step("jump", onToday)} className="mr-1">
+      {/* keeps its space in the current period, so the arrows never move under the pointer */}
+      {onToday ? (
+        <Button
+          variant="ghost"
+          onClick={step("jump", onToday)}
+          className={cn("mr-1", isCurrent && "invisible")}
+          aria-hidden={isCurrent || undefined}
+          tabIndex={isCurrent ? -1 : undefined}
+        >
           {t("common.today")}
         </Button>
       ) : null}
-      <Button variant="ghost" size="icon" onClick={step("back", onPrev)} aria-label={t("common.previous")}>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={step("back", onPrev)}
+        disabled={!canPrev}
+        aria-label={t("common.previous")}
+      >
         <ChevronLeft />
       </Button>
       <span className="min-w-36 text-center text-sm font-semibold tabular" aria-live="polite">
         {label}
       </span>
-      <Button variant="ghost" size="icon" onClick={step("forward", onNext)} aria-label={t("common.next_period")}>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={step("forward", onNext)}
+        disabled={!canNext}
+        aria-label={t("common.next_period")}
+      >
         <ChevronRight />
       </Button>
     </div>

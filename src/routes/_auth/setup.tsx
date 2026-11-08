@@ -3,6 +3,7 @@ import { createFileRoute, redirect, useRouter } from "@tanstack/react-router"
 import { useState } from "react"
 import { toast } from "sonner"
 import { z } from "zod"
+import { HolidayPresetPicker } from "@/components/app/holiday-preset-picker"
 import { focusField } from "@/components/form/focus-field"
 import { FormRoot, useAppForm } from "@/components/form/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -23,13 +24,12 @@ export const Route = createFileRoute("/_auth/setup")({
   component: Setup,
 })
 
-const SKIP = "none"
 const required = z.string().trim().min(1, "common.required")
 
 const STEPS = [
   { key: "company", fields: ["setupCode", "companyName", "locale", "timezone"] },
   { key: "time", fields: ["weeklyHours", "vacationDays"] },
-  { key: "holidays", fields: ["holidayPreset"] },
+  { key: "holidays", fields: ["holidays"] },
   { key: "admin", fields: ["adminName", "adminEmail", "adminPassword", "confirm"] },
 ] as const
 
@@ -49,6 +49,7 @@ function Setup() {
   const [step, setStep] = useState(0)
   const [error, setError] = useState<string | null>(null)
   // number fields are null while empty
+  const zurich = info.presets.find((p) => p.key === "CH-ZH")
   const defaults: { weeklyHours: number | null; vacationDays: number | null } = { weeklyHours: 42, vacationDays: 25 }
   const form = useAppForm({
     defaultValues: {
@@ -57,7 +58,7 @@ function Setup() {
       locale,
       timezone: browserTz("Europe/Zurich"),
       ...defaults,
-      holidayPreset: info.presets.some((p) => p.key === "CH-ZH") ? "CH-ZH" : SKIP,
+      holidays: { key: zurich ? "CH-ZH" : null, days: zurich?.defaultDays ?? [] },
       adminName: "",
       adminEmail: "",
       adminPassword: "",
@@ -65,7 +66,7 @@ function Setup() {
     },
     onSubmit: async ({ value, formApi }) => {
       setError(null)
-      const holidayPreset = value.holidayPreset === SKIP ? null : value.holidayPreset
+      const holidayPreset = value.holidays.key
       const outcome = await runSetup({
         data: {
           setupCode: value.setupCode || undefined,
@@ -75,6 +76,7 @@ function Setup() {
           fulltimeWeeklyMinutes: Math.round(Number(value.weeklyHours) * 60),
           defaultVacationDays: Number(value.vacationDays),
           holidayPreset,
+          holidayPresetDays: value.holidays.days,
           adminName: value.adminName,
           adminEmail: value.adminEmail.trim(),
           adminPassword: value.adminPassword,
@@ -170,7 +172,7 @@ function Setup() {
               </form.AppField>
               <form.AppField name="timezone">
                 {(f) => (
-                  <f.SelectField
+                  <f.ComboboxField
                     label={t("profile.timezone")}
                     options={info.timezones.map((tz) => ({ value: tz, label: tz.replace(/_/g, " ") }))}
                   />
@@ -202,18 +204,18 @@ function Setup() {
               </form.AppField>
             </div>
             <div className={step === 2 ? "contents" : "hidden"}>
-              <form.AppField name="holidayPreset">
+              <form.Field name="holidays">
                 {(f) => (
-                  <f.SelectField
+                  <HolidayPresetPicker
+                    presets={info.presets}
+                    value={f.state.value}
+                    onChange={f.handleChange}
                     label={t("setup.holidays")}
                     description={t("setup.holidays_help")}
-                    options={[
-                      { value: SKIP, label: t("setup.no_holidays") },
-                      ...info.presets.map((p) => ({ value: p.key, label: p.label })),
-                    ]}
+                    allowClear={t("setup.no_holidays")}
                   />
                 )}
-              </form.AppField>
+              </form.Field>
             </div>
             <div className={step === 3 ? "contents" : "hidden"}>
               <form.AppField name="adminName" validators={{ onBlur: required }}>

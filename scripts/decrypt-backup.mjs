@@ -39,6 +39,7 @@ function nonce(counter, last) {
   return n
 }
 
+const int = (v, max) => Number.isInteger(v) && v > 0 && v <= max
 async function askPassword() {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
   rl._writeToOutput = (s) => {
@@ -61,6 +62,10 @@ async function main(src, dest) {
     }
     const header = readExactly(fd, readExactly(fd, 2).readUInt16BE(0))
     const meta = JSON.parse(header.toString("utf8"))
+    if (!int(meta.t, 10) || !int(meta.m, 1024 * 1024) || !int(meta.p, 16) || !int(meta.chunk, 64 * 1024 * 1024)) {
+      console.error("damaged backup header")
+      return 2
+    }
     const key = await hashRaw(Buffer.from(password, "utf8"), {
       // Argon2id; @node-rs/argon2 declares Algorithm as a const enum that plain JavaScript cannot import
       // oxlint-disable-next-line typescript/no-unsafe-enum-assignment

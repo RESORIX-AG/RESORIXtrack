@@ -1,11 +1,12 @@
 /**
- * "My time" (and a member's time for leads/HR via `userId`): week timeline or month calendar, the work log
- * of the week, and the period's entries. State lives in the URL: `view`, `date`, `add=1` (opens the add
- * dialog; the command palette uses it), `deleted=1` (show deleted entries).
+ * "My time" (and a member's time for leads/HR via `userId`): week timeline or month calendar and the period's
+ * entries, each with its project. State lives in the URL: `view`, `date`, `add=1` (opens the add
+ * dialog; the command palette uses it), `deleted=1` (show deleted entries), `fix=project` (marks past work in
+ * open months without a project and scrolls to `date`; the dashboard's reminder links here).
  */
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Lock, Plus } from "lucide-react"
-import { useId, useState } from "react"
+import { FolderOpen, Lock, Plus } from "lucide-react"
+import { useEffect, useId, useState } from "react"
 import { toast } from "sonner"
 import { Section } from "@/components/app/page"
 import { PeriodContent, PeriodNav } from "@/components/app/period-nav"
@@ -21,6 +22,7 @@ import { useMe } from "@/lib/session"
 import { correctionsQuery, periodQuery, restoreEntryFn } from "./api"
 import { FindingsBadge } from "./day-marks"
 import { EntriesTable } from "./entries-table"
+import { entryContext } from "./entry-context"
 import { type Entry, EntryDialog, type EntryTarget } from "./entry-dialog"
 import { EntryHistoryDialog } from "./entry-history"
 import { invalidateTimeData } from "./invalidate"
@@ -29,7 +31,6 @@ import { MonthView } from "./month-view"
 import { Notice } from "./notice"
 import { periodParams, type TimeSearch } from "./period"
 import { WeekTimeline } from "./week-timeline"
-import { WorklogWeek } from "./worklog"
 
 export function TimeView({
   userId,
@@ -51,6 +52,28 @@ export function TimeView({
   const view = q.data
   const correctedIds = view?.entries.filter((e) => e.corrected).map((e) => e.id) ?? []
   const corrections = useQuery(correctionsQuery({ userId: view?.user.id, ids: correctedIds })).data ?? {}
+  const fixing = search.fix === "project"
+  // as sign-off counts them: past days of months still open
+  const unassigned =
+    fixing && view
+      ? view.entries.filter((e) => {
+          const date = wallClock(e.startAt, view.user.timezone).date
+          return (
+            e.kind === "work" &&
+            e.projectId == null &&
+            !e.deleted &&
+            !e.running &&
+            date < view.today &&
+            !view.lockedMonths[date.slice(0, 7)]
+          )
+        })
+      : []
+  const needsProject = new Set(unassigned.map((e) => e.id))
+  const loaded = view != null
+  useEffect(() => {
+    if (fixing && loaded && search.date)
+      document.querySelector(`[data-day="${search.date}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [fixing, loaded, search.date])
 
   const [target, setTarget] = useState<EntryTarget>({ date: today })
   const [editOpen, setEditOpenRaw] = useState(false)
@@ -65,26 +88,18 @@ export function TimeView({
   if (!view) return <TimeViewSkeleton />
 
   const self = view.user.id === me.id
-  // ?add=1 (command palette, dashboard) opens the add dialog; closing it clears the parameter
+  // ?add=1 (command palette) opens the add dialog; closing it clears the parameter
   const adding = Boolean(search.add) && !editOpen
   const closeOrOpen = (open: boolean) => {
     if (!open && search.add) onSearch({ ...search, add: undefined })
     setEditOpen(open)
-  }
-  const ctx = {
-    owner: view.user,
-    self,
-    today: view.today,
-    lockedMonths: view.lockedMonths,
-    reasonRequired: view.reasonRequired,
-    canEdit: view.canEdit,
   }
   const openAdd = (date: string, start?: string) => {
     setTarget({ date: date > view.today ? view.today : date, start })
     setEditOpen(true)
   }
   const openEdit = (entry: Entry) => {
-    setTarget({ entry, date: entry.startAt.slice(0, 10) })
+    setTarget({ entry, date: wallClock(entry.startAt, view.user.timezone).date })
     setEditOpen(true)
   }
   const openHistory = (entry: Entry) => {
@@ -126,10 +141,40 @@ export function TimeView({
           {t("time.locked_banner", {
             month: fmtMonth(month, intl),
             name: lock.signedBy ?? "?",
-            date: fmtDay(lock.signedAt.slice(0, 10), intl),
+            date: fmtDay(wallClock(lock.signedAt, me.timezone).date, intl),
           })}
         </Notice>
       ))}
+      {fixing ? (
+        unassigned.length ? (
+          <Notice
+            icon={FolderOpen}
+            tone="info"
+            action={
+              view.canEdit ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    openEdit(
+                      unassigned.find((e) => wallClock(e.startAt, view.user.timezone).date === search.date) ??
+                        unassigned[0],
+                    )
+                  }
+                >
+                  {t("dashboard.project_fix")}
+                </Button>
+              ) : null
+            }
+          >
+            {t("time.project_fix_hint", { count: unassigned.length })}
+          </Notice>
+        ) : (
+          <Notice icon={FolderOpen} tone="positive">
+            {t("time.project_fix_done")}
+          </Notice>
+        )
+      ) : null}
 
       <section className="flex flex-col gap-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={label}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -149,7 +194,7 @@ export function TimeView({
             onToday={() => go({ date: undefined })}
             isCurrent={isCurrent}
           />
-          <dl className="flex items-center gap-4 text-sm sm:ml-auto" aria-live="polite">
+          <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm sm:ml-auto" aria-live="polite">
             <div className="flex items-baseline gap-1.5">
               <dt className="text-muted-foreground">{t("time.worked")}</dt>
               <dd className="font-semibold tabular">
@@ -186,21 +231,26 @@ export function TimeView({
         </div>
         <PeriodContent className={q.isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
           {mode === "week" ? (
-            <WeekTimeline view={view} corrections={corrections} onEdit={openEdit} onAdd={openAdd} />
+            <WeekTimeline
+              view={view}
+              corrections={corrections}
+              needsProject={needsProject}
+              onEdit={openEdit}
+              onAdd={openAdd}
+            />
           ) : (
             <MonthView view={view} onPick={(date) => go({ view: undefined, date })} />
           )}
         </PeriodContent>
-        {mode === "week" ? <Legend /> : null}
+        {mode === "week" ? <Legend missingProject={needsProject.size > 0} /> : null}
       </section>
-
-      {mode === "week" ? <WorklogWeek view={view} initialDay={search.date} /> : null}
 
       <Section title={t("time.entries")}>
         <EntriesTable
           entries={view.entries}
           tz={view.user.timezone}
           corrections={corrections}
+          needsProject={needsProject}
           canEdit={view.canEdit}
           onEdit={openEdit}
           onHistory={openHistory}
@@ -226,7 +276,7 @@ export function TimeView({
         open={editOpen || adding}
         onOpenChange={closeOrOpen}
         target={adding ? { date: view.today } : target}
-        ctx={ctx}
+        ctx={entryContext(view, self)}
         correction={target.entry ? corrections[target.entry.id] : undefined}
         onHistory={openHistory}
         onRestore={restore}
@@ -242,7 +292,7 @@ export function TimeView({
   )
 }
 
-function Legend() {
+function Legend({ missingProject }: { missingProject: boolean }) {
   const { t } = useI18n()
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground md:justify-end">
@@ -254,6 +304,12 @@ function Legend() {
         <span className="size-2.5 rounded-sm ring-2 ring-warning ring-inset" aria-hidden />
         {t("time.legend_corrected")}
       </li>
+      {missingProject ? (
+        <li className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm border border-dashed border-warning bg-warning/15" aria-hidden />
+          {t("time.project_missing")}
+        </li>
+      ) : null}
     </ul>
   )
 }

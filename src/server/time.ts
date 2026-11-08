@@ -28,6 +28,9 @@ export function fmtInstant(i: Temporal.Instant): string {
   return i.toString({ smallestUnit: "microsecond" })
 }
 
+/** Stored instant of epoch milliseconds. */
+export const instantOfMs = (n: number): string => new Date(n).toISOString().replace("Z", "000Z")
+
 export function parseInstant(s: string): Temporal.Instant {
   return Temporal.Instant.from(s)
 }
@@ -59,6 +62,12 @@ export function localToday(tz: string): string {
 
 export function localDateOf(at: string, tz: string): string {
   return parseInstant(at).toZonedDateTimeISO(zone(tz)).toPlainDate().toString()
+}
+
+/** Local wall-clock `HH:MM` of an instant (string or epoch ms). */
+export function localClock(at: string | number, tz: string): string {
+  const i = typeof at === "number" ? Temporal.Instant.fromEpochMilliseconds(at) : parseInstant(at)
+  return i.toZonedDateTimeISO(zone(tz)).toPlainTime().toString({ smallestUnit: "minute" })
 }
 
 /** [start, end) of local calendar day `d` as instants (handles 23h/25h DST days). */

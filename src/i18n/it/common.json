@@ -81,5 +81,7 @@
     "hex": "Hex"
   },
   "choose_file": "Scegli file",
-  "remove": "Rimuovi"
+  "remove": "Rimuovi",
+  "results": "Risultati",
+  "note_no_personal": "Resta per anni con i dati sul tempo. Nessun dato sanitario o altro dato personale."
 }

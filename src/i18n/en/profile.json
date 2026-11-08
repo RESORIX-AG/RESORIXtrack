@@ -67,7 +67,8 @@
     "oidc_no_account": "SSO: no account",
     "oidc_unverified": "SSO: email not verified",
     "setup_code": "Wrong setup code",
-    "reset_requested": "Reset requested"
+    "reset_requested": "Reset requested",
+    "mfa_required": "Password alone not allowed"
   },
   "export_data": "Download my data",
   "passkeys": "Passkeys",
@@ -105,6 +106,6 @@
     "code_from_app": "Code from the app",
     "code_format": "Enter the 6 digits",
     "required_cannot_disable": "Required for your account",
-    "banner": "Two-factor authentication is required for your account."
+    "banner": "Two-factor authentication is required for your account. Set it up to continue."
   }
 }

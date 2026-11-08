@@ -1,5 +1,6 @@
 {
   "common": {
+    "changes_from_title": "When do the changes apply?",
     "range": "{from}–{to} of {total}"
   },
   "roles": {
@@ -65,7 +66,19 @@
     "recording_simplified_short": "Simplified",
     "recording_waived_short": "Waived",
     "regular_night_work": "Regular night work",
-    "regular_night_work_help": "ArG Art. 17b: 10 % time credit"
+    "regular_night_work_help": "ArG Art. 17b: 10 % time credit",
+    "terms_from": "Changes apply from",
+    "terms_from_help": "Earlier days keep the previous values.",
+    "vacation_days_help": "Full-time, 5-day week; fewer working days reduce it",
+    "earlier": "Earlier",
+    "earlier_terms": "Terms until {date}",
+    "earlier_period": "Employed {start} to {end}",
+    "current_terms_from": "Current terms since {date}",
+    "rehire": "Rehire",
+    "rehire_title": "Rehire {name}",
+    "rehire_help": "A new employment starts. The earlier one stays as it was, its months unchanged.",
+    "rehire_start": "New employment start",
+    "rehired": "Rehired"
   },
   "schedule": {
     "title": "Work schedule",
@@ -95,7 +108,8 @@
     "new_title": "New schedule",
     "planned": "Planned",
     "reason_required": "Reason (required)",
-    "reason_placeholder": "e.g. new contract"
+    "reason_placeholder": "e.g. new contract",
+    "gap": "No schedule from {from} to {to}: those days have no target. Add a version starting on {from}."
   },
   "vacation": {
     "title": "Entitlement per year",
@@ -184,6 +198,7 @@
       "attachment": "Document",
       "signoff": "Month sign-off",
       "api_token": "API token",
+      "holiday": "Public holiday",
       "work_log": "Work log",
       "project": "Project",
       "team_lead": "Lead / deputy"
@@ -231,6 +246,8 @@
       "vacation_days_per_year": "Vacation days",
       "is_active": "Active",
       "holiday_calendar_id": "Holiday calendar",
+      "calendar_id": "Calendar",
+      "fraction": "Share of day",
       "note": "Note",
       "start_half": "Start",
       "end_half": "End",
@@ -261,7 +278,15 @@
       "minutes_thu": "Thu",
       "minutes_fri": "Fri",
       "minutes_sat": "Sat",
-      "minutes_sun": "Sun"
+      "minutes_sun": "Sun",
+      "scheduled_end_at": "Scheduled clock-out",
+      "capabilities": "Permissions",
+      "locale": "Language",
+      "legal_weekly_max_hours": "Legal weekly max",
+      "recording_mode": "Time recording",
+      "arg_exempt": "Exempt from the Labour Act",
+      "regular_night_work": "Regular night work",
+      "birth_date": "Date of birth"
     },
     "sources": {
       "web": "Web",
@@ -273,7 +298,8 @@
       "demo": "Demo",
       "import": "Import",
       "cli": "Command line",
-      "worker": "Automatic"
+      "worker": "Automatic",
+      "setup": "Initial setup"
     }
   },
   "backups": {
@@ -325,7 +351,8 @@
       "reset_requested": "Reset requested",
       "mfa_failed": "Wrong two-factor code",
       "invalid_mfa": "Wrong two-factor code",
-      "passkey": "Signed in with passkey"
+      "passkey": "Signed in with passkey",
+      "mfa_required": "Password alone not allowed"
     }
   },
   "branding": {
@@ -386,9 +413,6 @@
     "n_holidays_one": "{count} holiday",
     "n_holidays_other": "{count} holidays",
     "usage": "{teams} teams, {users} people",
-    "from_preset": "From preset",
-    "empty_calendar": "Empty",
-    "preset": "Canton or preset",
     "preset_years": "Holidays for {from} and {to}",
     "preset_installed": "Calendar created",
     "use_as_default": "Company default",
@@ -414,6 +438,11 @@
     "canton": "Canton",
     "preset_hint": "Adds next year every October",
     "no_preset": "No preset",
+    "always_included": "Always included",
+    "optional_days": "Optional days",
+    "optional_days_hint": "Ticked days are added every year. Commune days apply in most of the canton.",
+    "not_in": "Not in {communes}",
+    "not_in_more": "Not in {communes} and {count} more",
     "kind": {
       "federal": "Federal",
       "cantonal": "Cantonal",
@@ -432,7 +461,6 @@
     "deputies": "Deputies",
     "members": "Members",
     "calendar": "Holiday calendar",
-    "calendar_default": "Company default",
     "color": "Colour",
     "no_lead": "No lead",
     "no_lead_help": "Without a lead, HR decides requests.",
@@ -484,7 +512,8 @@
     "key_invalid": "Use lowercase letters, digits and _",
     "sort": "Order",
     "delete_title": "Delete {name}?",
-    "deleted": "Type deleted"
+    "deleted": "Type deleted",
+    "counting_locked": "In use: category and counting are fixed."
   },
   "settings": {
     "title": "Settings",
@@ -500,18 +529,18 @@
     },
     "groups": {
       "company": "Company",
-      "defaults": "Defaults for new people",
       "hours": "Hours and holidays",
+      "vacation": "Vacation",
       "corrections": "Corrections and leads",
       "sick": "Sick reports",
-      "worklog": "Work log",
       "compliance": "Checks (ArG)",
       "retention": "Retention",
       "mfa": "Two-factor",
       "api": "API",
       "sessions": "Sign-in log",
       "privacy": "Privacy notice",
-      "surcharges": "Sunday and holiday work"
+      "surcharges": "Sunday and holiday work",
+      "projects": "Projects"
     },
     "units": {
       "hhmm": "h:mm",
@@ -522,22 +551,18 @@
     },
     "fields": {
       "company_name": "Company name",
-      "default_timezone": "Timezone",
-      "default_locale": "Language",
+      "default_timezone": "Company timezone",
+      "default_locale": "Default language",
       "default_vacation_days": "Vacation days / year",
       "fulltime_weekly_minutes": "Full-time week",
       "holiday_mode": "Holidays reduce the target",
       "holiday_work_surcharge_percent": "Sunday/holiday surcharge",
-      "vacation_prorate_workdays": "Pro-rate vacation by workdays",
       "reason_required_for_past_edits": "Reason for past edits",
       "lead_can_edit_schedules": "Leads edit schedules",
       "lead_can_adjust_balances": "Leads adjust balances",
       "clock_reminder_hours": "Clock-out reminder after",
       "sick_self_report_backdate_days": "Backdate self-reports by",
       "sick_self_report_max_days": "Max. self-report length",
-      "worklog_mode": "Work log",
-      "worklog_required_percent": "Required share",
-      "worklog_project_required": "Project required",
       "compliance_enabled": "Company is subject to the Labour Act",
       "break_enforcement": "Block clocking in before the legal minimum break and daily rest",
       "weekly_max_minutes": "Legal weekly maximum",
@@ -549,9 +574,13 @@
       "api_tokens_enabled": "Personal API tokens",
       "login_log_retention_days": "Keep sign-in log for",
       "privacy_notice": "Text on /privacy",
-      "holiday_work_surcharge_mode": "Surcharge as"
+      "holiday_work_surcharge_mode": "Surcharge as",
+      "project_mode": "Projects on time entries"
     },
     "help": {
+      "default_timezone": "Counts the company's days (sign-off, reminders); preset for new people.",
+      "default_locale": "Preset for new people and the sign-in page.",
+      "default_vacation_days": "Default for new people",
       "fulltime_weekly_minutes": "Default schedule, e.g. 42:00",
       "holiday_work_surcharge_percent": "ArG Art. 19: 50 % for temporary work",
       "clock_reminder_hours": "0 = off",
@@ -559,26 +588,28 @@
       "night_work_permitted": "Findings are then shown as info only",
       "sunday_work_permitted": "Findings are then shown as info only",
       "retention_years": "At least 5 (ArGV 1 Art. 73)",
-      "worklog_required_percent": "Share of each day's worked time",
       "compliance_enabled": "Exempt are e.g. public administrations, agriculture, private households (Art. 2 ArG)",
       "break_enforcement": "Art. 15 and 15a ArG. A manual entry stays possible.",
-      "holiday_work_surcharge_mode": "Payroll: reported for wages. Time credit: per collective agreement."
+      "holiday_work_surcharge_mode": "Payroll: reported for wages. Time credit: per collective agreement.",
+      "project_mode": "Required: every work entry needs a project before the month can be signed off."
     },
     "options": {
       "holiday_mode": {
         "scheduled": "On workdays",
         "prorata": "Pro rata"
       },
-      "worklog_mode": {
-        "off": "Off",
-        "optional": "Optional",
-        "required": "Required"
-      },
       "holiday_work_surcharge_mode": {
         "payroll": "Payroll",
         "time_credit": "Time credit"
+      },
+      "project_mode": {
+        "off": "Off",
+        "optional": "Optional",
+        "required": "Required"
       }
-    }
+    },
+    "valid_from": "Changes apply from",
+    "valid_from_help": "Earlier days keep the previous rules; never before the last signed-off month."
   },
   "api_keys": {
     "revoked": "Revoked",

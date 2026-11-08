@@ -54,7 +54,8 @@ function parseSignedHours(text: string): number | null {
 export function AccountPanel({ userId }: { userId: number }) {
   const { t, intl } = useI18n()
   const me = useMe()
-  const [year, setYear] = useState(() => Number(todayIn(me.timezone).slice(0, 4)))
+  const thisYear = Number(todayIn(me.timezone).slice(0, 4))
+  const [year, setYear] = useState(thisYear)
   const [pending, startTransition] = useTransition()
   // both at once: the account no longer has to answer before the adjustments are requested
   const [{ data: a }, { data: items }] = useSuspenseQueries({
@@ -119,6 +120,8 @@ export function AccountPanel({ userId }: { userId: number }) {
           label={String(a.year)}
           onPrev={() => setYear(a.year - 1)}
           onNext={() => setYear(a.year + 1)}
+          canPrev={a.year > a.firstYear}
+          canNext={a.year <= thisYear}
           startTransition={startTransition}
         />
       </div>
@@ -127,7 +130,7 @@ export function AccountPanel({ userId }: { userId: number }) {
           <StatCard
             label={t("account.opening")}
             value={<Duration minutes={a.statement.openingMin} balance />}
-            hint={t("account.opening_hint", { year: a.year })}
+            hint={t("account.opening_hint", { prev: a.year - 1 })}
           />
           <StatCard
             label={t("member.adjustments_year", { year: a.year })}
@@ -231,7 +234,8 @@ function AdjustmentDialog({ userId, name, onClose }: { userId: number; name: str
         }),
     },
     onSubmit: async ({ value, formApi }) => {
-      const amount = value.account === "time" ? parseSignedHours(value.amount)! : Number(value.amount.replace(",", "."))
+      const amount = value.account === "time" ? parseSignedHours(value.amount) : Number(value.amount.replace(",", "."))
+      if (amount == null) return
       const effectiveDate = value.effectiveDate || null
       const failed = await failure(
         createAdjustmentFn({

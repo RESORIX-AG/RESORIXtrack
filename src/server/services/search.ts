@@ -2,13 +2,14 @@
  * Global search (⌘K). Only returns what the actor may see:
  * - people: HR → everyone; team leads → members of led teams; administrators → everyone (profile only);
  *   employees → nobody but themselves (they have no use for other people's records)
- * - projects: active projects (everyone books on them); teams: administrators and managers
+ * - projects: the active projects the actor may book on or manage; teams: administrators and managers
  * Queries are prefix/substring LIKE with LIMIT; tables are small (people, projects, teams).
  */
-import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm"
 import { db } from "../db"
-import { projects, teams, users } from "../db/schema"
+import { teams, users } from "../db/schema"
 import { type Actor, isManager } from "./permissions"
+import { visibleProjects } from "./projects"
 
 export interface SearchHit {
   kind: "person" | "project" | "team"
@@ -47,20 +48,17 @@ export function globalSearch(actor: Actor, rawQuery: string): SearchHit[] {
     for (const r of rows) hits.push({ kind: "person", id: r.id, title: r.name, subtitle: r.team ?? r.email })
   }
 
-  for (const r of db
-    .select({ id: projects.id, name: projects.name, code: projects.code, color: projects.color })
-    .from(projects)
-    .where(and(eq(projects.isActive, true), or(like(projects.name, p), like(projects.code, p))))
-    .orderBy(asc(projects.name))
-    .limit(6)
-    .all())
-    hits.push({ kind: "project", id: r.id, title: r.name, subtitle: r.code, color: r.color })
+  const needle = q.toLowerCase()
+  for (const r of visibleProjects(actor)
+    .filter((pr) => pr.name.toLowerCase().includes(needle) || (pr.code ?? "").toLowerCase().includes(needle))
+    .slice(0, 6))
+    hits.push({ kind: "project", id: r.id, title: r.name, subtitle: r.code ?? "", color: r.color })
 
   if (actor.isAdmin || isManager(actor)) {
     for (const r of db
       .select({ id: teams.id, name: teams.name, color: teams.color })
       .from(teams)
-      .where(like(teams.name, p))
+      .where(sql`${teams.name} LIKE ${p} ESCAPE '\\'`)
       .orderBy(asc(teams.name))
       .limit(5)
       .all())

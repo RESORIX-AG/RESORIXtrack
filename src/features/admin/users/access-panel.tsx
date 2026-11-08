@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query"
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { Download, Eye, EyeOff, Fingerprint, KeyRound, Mail, ShieldOff, Sparkles, UserX } from "lucide-react"
 import { type ReactNode, useId, useState } from "react"
 import { toast } from "sonner"
@@ -24,6 +24,7 @@ import {
   resetMfaFn,
   setActiveFn,
   setPasswordFn,
+  userRefsQuery,
 } from "../api/users"
 import { downloadJson, todayLocal } from "../lib"
 import { EditorSheet, SheetSubmit, useAction } from "../ui"
@@ -41,6 +42,8 @@ function Row({ label, value, action }: { label: string; value: ReactNode; action
 export function AccessPanel({ user }: { user: UserDetail }) {
   const { t, intl } = useI18n()
   const me = useMe()
+  // single sign-on only administrators have no password to confirm with
+  const needsPassword = useSuspenseQuery(userRefsQuery).data.stepUpPassword
   const [dialog, setDialog] = useState<"password" | "mfa" | "passkeys" | "deactivate" | "anonymize" | null>(null)
   const resend = useAction(() => resendInviteFn({ data: { id: user.id } }), { success: t("admin.access.invite_sent") })
   const activate = useAction((active: boolean) => setActiveFn({ data: { id: user.id, active } }), {
@@ -182,12 +185,15 @@ export function AccessPanel({ user }: { user: UserDetail }) {
         ) : null}
       </SettingsGroup>
 
-      {dialog === "password" ? <PasswordSheet user={user} onClose={() => setDialog(null)} /> : null}
+      {dialog === "password" ? (
+        <PasswordSheet user={user} needsPassword={needsPassword} onClose={() => setDialog(null)} />
+      ) : null}
       {dialog === "mfa" ? (
         <StepUpDialog
           title={t("admin.access.reset_mfa_title", { name: user.name })}
           confirmLabel={t("admin.access.reset_mfa")}
           success={t("admin.access.mfa_reset_ok")}
+          needsPassword={needsPassword}
           run={(adminPassword) => resetMfaFn({ data: { id: user.id, adminPassword } })}
           onClose={() => setDialog(null)}
         />
@@ -197,6 +203,7 @@ export function AccessPanel({ user }: { user: UserDetail }) {
           title={t("admin.access.remove_passkeys_title", { name: user.name })}
           confirmLabel={t("admin.access.remove_passkeys")}
           success={t("admin.access.passkeys_removed")}
+          needsPassword={needsPassword}
           run={(adminPassword) => removePasskeysFn({ data: { id: user.id, adminPassword } })}
           onClose={() => setDialog(null)}
         />
@@ -209,7 +216,9 @@ export function AccessPanel({ user }: { user: UserDetail }) {
         confirmLabel={t("admin.access.deactivate")}
         onConfirm={() => activate.mutateAsync(false)}
       />
-      {dialog === "anonymize" ? <AnonymizeDialog user={user} onClose={() => setDialog(null)} /> : null}
+      {dialog === "anonymize" ? (
+        <AnonymizeDialog user={user} needsPassword={needsPassword} onClose={() => setDialog(null)} />
+      ) : null}
     </div>
   )
 }
@@ -220,7 +229,15 @@ function generatePassword(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")
 }
 
-function PasswordSheet({ user, onClose }: { user: UserDetail; onClose: () => void }) {
+function PasswordSheet({
+  user,
+  needsPassword,
+  onClose,
+}: {
+  user: UserDetail
+  needsPassword: boolean
+  onClose: () => void
+}) {
   const newPasswordId = useId()
   const { t, tError } = useI18n()
   const [visible, setVisible] = useState(false)
@@ -237,7 +254,7 @@ function PasswordSheet({ user, onClose }: { user: UserDetail; onClose: () => voi
     validators: {
       onChange: z.object({
         password: z.string().min(10, "errors.fields.password.too_short").max(256, "errors.fields.too_long"),
-        adminPassword: z.string().min(1, "errors.fields.required"),
+        adminPassword: needsPassword ? z.string().min(1, "errors.fields.required") : z.string(),
         notify: z.boolean(),
       }),
     },
@@ -308,16 +325,18 @@ function PasswordSheet({ user, onClose }: { user: UserDetail; onClose: () => voi
             )}
           </form.Field>
           <form.AppField name="notify">{(f) => <f.SwitchField label={t("admin.access.notify")} />}</form.AppField>
-          <form.AppField name="adminPassword">
-            {(f) => (
-              <f.TextField
-                label={t("common.your_password")}
-                description={t("admin.access.confirm_hint")}
-                type="password"
-                autoComplete="current-password"
-              />
-            )}
-          </form.AppField>
+          {needsPassword ? (
+            <form.AppField name="adminPassword">
+              {(f) => (
+                <f.TextField
+                  label={t("common.your_password")}
+                  description={t("admin.access.confirm_hint")}
+                  type="password"
+                  autoComplete="current-password"
+                />
+              )}
+            </form.AppField>
+          ) : null}
         </FormRoot>
       </form.AppForm>
     </EditorSheet>
@@ -351,24 +370,27 @@ function AdminPasswordInput({
   )
 }
 
-/** Confirm a sensitive action with the administrator's own password. */
+/** Confirm a sensitive action with the administrator's own password, when they have one. */
 function StepUpDialog({
   title,
   confirmLabel,
   success,
+  needsPassword,
   run,
   onClose,
 }: {
   title: string
   confirmLabel: string
   success: string
+  needsPassword: boolean
   run: (adminPassword: string) => Promise<unknown>
   onClose: () => void
 }) {
   const { tError } = useI18n()
   const [pw, setPw] = useState("")
   const [error, setError] = useState("")
-  const action = useAction(() => run(pw), { success, silentError: true })
+  // without the password field, errors go to a toast
+  const action = useAction(() => run(pw), { success, silentError: needsPassword })
   return (
     <ConfirmDialog
       open
@@ -379,24 +401,32 @@ function StepUpDialog({
         try {
           await action.mutateAsync(undefined)
         } catch (err) {
-          setError(tError(err))
+          if (needsPassword) setError(tError(err))
           throw err
         }
       }}
     >
-      <AdminPasswordInput value={pw} onChange={setPw} error={error} />
+      {needsPassword ? <AdminPasswordInput value={pw} onChange={setPw} error={error} /> : null}
     </ConfirmDialog>
   )
 }
 
-function AnonymizeDialog({ user, onClose }: { user: UserDetail; onClose: () => void }) {
+function AnonymizeDialog({
+  user,
+  needsPassword,
+  onClose,
+}: {
+  user: UserDetail
+  needsPassword: boolean
+  onClose: () => void
+}) {
   const { t, tError } = useI18n()
   const qc = useQueryClient()
   const [pw, setPw] = useState("")
   const [error, setError] = useState("")
   const run = useAction(() => anonymizeFn({ data: { id: user.id, adminPassword: pw } }), {
     success: t("admin.access.anonymized"),
-    silentError: true,
+    silentError: needsPassword,
   })
   return (
     <ConfirmDialog
@@ -411,12 +441,12 @@ function AnonymizeDialog({ user, onClose }: { user: UserDetail; onClose: () => v
           await run.mutateAsync(undefined)
           await qc.invalidateQueries({ queryKey: ["admin"] })
         } catch (err) {
-          setError(tError(err))
+          if (needsPassword) setError(tError(err))
           throw err
         }
       }}
     >
-      <AdminPasswordInput value={pw} onChange={setPw} error={error} />
+      {needsPassword ? <AdminPasswordInput value={pw} onChange={setPw} error={error} /> : null}
     </ConfirmDialog>
   )
 }

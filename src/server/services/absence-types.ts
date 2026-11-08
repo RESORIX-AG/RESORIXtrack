@@ -6,7 +6,7 @@ import { asc, eq } from "drizzle-orm"
 import { db } from "../db"
 import { type AbsenceCategory, type AbsenceType, absenceTypes } from "../db/schema"
 import { Validation } from "../errors"
-import type { Actor } from "./permissions"
+import { type Actor, hrSelfFallback } from "./permissions"
 
 type DefaultType = Omit<typeof absenceTypes.$inferInsert, "id" | "sort" | "isActive">
 
@@ -156,9 +156,10 @@ export function getAbsenceType(ref: number | string): AbsenceType {
   return t
 }
 
-/** Types the actor may record for themselves (HR may record every type). */
+/** Types the actor may record for themselves (every type only as HR when nobody else could record them). */
 export function requestableTypes(actor: Actor): AbsenceType[] {
-  return listAbsenceTypes({ activeOnly: true }).filter((t) => t.employeeCanRequest || actor.isHr)
+  const all = hrSelfFallback(actor, actor.user)
+  return listAbsenceTypes({ activeOnly: true }).filter((t) => t.employeeCanRequest || all)
 }
 
 export function isSensitive(category: AbsenceCategory): boolean {

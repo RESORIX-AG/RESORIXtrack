@@ -86,9 +86,6 @@ export function exportPersonalData(userId: number) {
     timeEntries: rows(
       db.select().from(s.timeEntries).where(eq(s.timeEntries.userId, userId)).orderBy(asc(s.timeEntries.startAt)),
     ).map((r) => Object.assign(omit(r, "userId"), { startAt: iso(r.startAt), endAt: iso(r.endAt) })),
-    workLogs: rows(db.select().from(s.workLogs).where(eq(s.workLogs.userId, userId)).orderBy(asc(s.workLogs.date))).map(
-      (r) => omit(r, "userId"),
-    ),
     absences: absences.map((r) => omit(r, "userId")),
     attachments: attachments.map((r) => omit(r, "storageName")),
     signoffs: rows(

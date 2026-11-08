@@ -7,6 +7,7 @@ import { getCookie, getRequestHeader } from "@tanstack/react-start/server"
 import { LOCALE_COOKIE, type Locale, pickLocale } from "@/lib/i18n-core"
 import { optionalAuth } from "../middleware"
 import { pendingApprovalCount } from "../services/approvals-count"
+import { mfaEnrolmentDue } from "../services/mfa-policy"
 import { unreadCount } from "../services/notifications"
 import { isManager } from "../services/permissions"
 import { getAllSettings } from "../services/settings"
@@ -31,7 +32,8 @@ export interface Me {
   canProjects: boolean
   twoFactorEnabled: boolean
   mfaRequired: boolean
-  mfaReenrolRequired: boolean
+  /** Two-factor setup is required before anything but the profile works. */
+  mfaDue: boolean
 }
 
 export interface Bootstrap {
@@ -43,7 +45,7 @@ export interface Bootstrap {
     brandAccent: string
     setupComplete: boolean
     defaultTimezone: string
-    worklogMode: "off" | "optional" | "required"
+    projectMode: "off" | "optional" | "required"
     apiTokensEnabled: boolean
   }
   counts: { unread: number; pendingApprovals: number }
@@ -82,7 +84,7 @@ export const getBootstrap = createServerFn({ method: "GET" })
         canProjects: isManager(actor) || actor.caps.has("projects"),
         twoFactorEnabled: Boolean(u.twoFactorEnabled),
         mfaRequired: s.mfa_required_for_all || (actor.isAdmin && s.mfa_required_for_admins),
-        mfaReenrolRequired: u.mfaReenrolRequired,
+        mfaDue: mfaEnrolmentDue(u),
       }
     }
     return {
@@ -94,7 +96,7 @@ export const getBootstrap = createServerFn({ method: "GET" })
         brandAccent: s.brand_accent,
         setupComplete: s.setup_complete,
         defaultTimezone: s.default_timezone,
-        worklogMode: s.worklog_mode,
+        projectMode: s.project_mode,
         apiTokensEnabled: s.api_tokens_enabled,
       },
       counts: actor

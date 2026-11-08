@@ -3,6 +3,7 @@
   "none": "Keine Befunde",
   "rule": {
     "break_min": "Pause zu kurz",
+    "break_stretch": "Über 5½ h ohne Pause",
     "daily_rest": "Ruhezeit unter 11 h",
     "day_span": "Tag über 14 h",
     "night_work": "Nachtarbeit",

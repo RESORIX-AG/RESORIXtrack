@@ -40,6 +40,12 @@ describe("team overview", () => {
     expect(byId.get(org.anna.id)?.findings).not.toBeNull()
   })
 
+  it("shows the lead's own findings on their own row", () => {
+    makeEntry(org.lead.id, "2026-11-04T07:00:00.000000Z", "2026-11-04T16:30:00.000000Z")
+    const own = teamOverview(loadActor(org.lead.id)).members.find((m) => m.user.id === org.lead.id)
+    expect(own?.findings?.violation).toBeGreaterThan(0)
+  })
+
   it("is for leads and HR only", () => {
     expect(err(() => teamOverview(loadActor(org.anna.id))).code).toBe("forbidden")
     expect(err(() => teamOverview(loadActor(org.admin.id))).code).toBe("forbidden")

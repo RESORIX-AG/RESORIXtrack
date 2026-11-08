@@ -9,9 +9,10 @@ import { localeSchema } from "@/lib/locales"
 import { auth } from "@/server/auth"
 import { env } from "@/server/env"
 import { Conflict, Validation } from "@/server/errors"
-import { authed, tx } from "@/server/middleware"
+import { authed, authedEnrolment, tx } from "@/server/middleware"
 import { queueMail } from "@/server/services/mail"
 import { unlinkProvider } from "@/server/services/oidc"
+import { grantPasskeyRegistration } from "@/server/services/passkey-step-up"
 import {
   afterPasswordChanged,
   deletePasskey,
@@ -29,16 +30,14 @@ import {
 } from "@/server/services/profile"
 import { getSetting } from "@/server/services/settings"
 import { hasPassword } from "@/server/services/user-auth"
-import { allTimezones } from "@/server/time"
 import { currentSessionId, fromAuthError, headers, passwordMatches, SCOPE_LIST } from "./server"
 
 // ------------------------------------------------------------------ profile
 
 export const fetchProfile = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(({ context: { actor } }) => ({
     profile: serializeProfile(actor.user),
-    timezones: allTimezones(),
     apiKeysEnabled: getSetting("api_tokens_enabled"),
     oidcOnly: env.oidc.only && Boolean(env.oidc.issuer && env.oidc.clientId),
   }))
@@ -46,12 +45,11 @@ export const fetchProfile = createServerFn({ method: "GET" })
 export const profileQuery = queryOptions({ queryKey: ["profile"], queryFn: () => fetchProfile() })
 
 export const saveProfile = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(
     z.object({
       name: z.string().trim().min(1).max(120),
       locale: localeSchema,
-      timezone: z.string().min(1).max(64),
       timeFormat: z.enum(["24h", "12h"]),
       notifyEmailOnCorrection: z.boolean(),
     }),
@@ -61,7 +59,7 @@ export const saveProfile = createServerFn({ method: "POST" })
 // ------------------------------------------------------------------ password
 
 export const changePassword = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(1).max(256) }))
   .handler(async ({ data, context: { actor } }) => {
     try {
@@ -77,7 +75,7 @@ export const changePassword = createServerFn({ method: "POST" })
 // ------------------------------------------------------------------ security overview
 
 export const fetchSecurity = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(async ({ context: { actor } }) => {
     const state = securityState(actor)
     let backupCodesLeft: number | null = null
@@ -95,7 +93,7 @@ export const fetchSecurity = createServerFn({ method: "GET" })
 export const securityQuery = queryOptions({ queryKey: ["profile", "security"], queryFn: () => fetchSecurity() })
 
 export const unlinkSignInProvider = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ id: z.number().int() }))
   .handler(({ data, context: { actor } }) => {
     tx(() => unlinkProvider(actor.id, data.id))
@@ -105,13 +103,13 @@ export const unlinkSignInProvider = createServerFn({ method: "POST" })
 // ------------------------------------------------------------------ sessions
 
 export const fetchSessions = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(async ({ context: { actor } }) => listSessions(actor, await currentSessionId()))
 
 export const sessionsQuery = queryOptions({ queryKey: ["profile", "sessions"], queryFn: () => fetchSessions() })
 
 export const endSession = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ id: z.number().int() }))
   .handler(({ data, context: { actor } }) => {
     tx(() => revokeSession(actor, data.id))
@@ -119,7 +117,7 @@ export const endSession = createServerFn({ method: "POST" })
   })
 
 export const endOtherSessions = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(async ({ context: { actor } }) => {
     const current = await currentSessionId()
     return { revoked: tx(() => revokeOtherSessions(actor, current)) }
@@ -128,7 +126,7 @@ export const endOtherSessions = createServerFn({ method: "POST" })
 // ------------------------------------------------------------------ API keys
 
 export const fetchApiKeys = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(({ context: { actor } }) => ({ keys: listApiKeys(actor), scopes: SCOPE_LIST }))
 
 export const apiKeysQuery = queryOptions({ queryKey: ["profile", "api-keys"], queryFn: () => fetchApiKeys() })
@@ -170,7 +168,7 @@ export const createApiKey = createServerFn({ method: "POST" })
   })
 
 export const deleteApiKey = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ id: z.number().int() }))
   .handler(({ data, context: { actor } }) => {
     tx(() => revokeApiKey(actor, data.id))
@@ -180,7 +178,7 @@ export const deleteApiKey = createServerFn({ method: "POST" })
 // ------------------------------------------------------------------ history
 
 export const fetchLoginHistory = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(({ context: { actor } }) => loginHistory(actor))
 
 export const loginHistoryQuery = queryOptions({
@@ -190,14 +188,25 @@ export const loginHistoryQuery = queryOptions({
 
 // ------------------------------------------------------------------ passkeys (adding runs through the Better Auth client)
 
+/** Step-up before `authClient.passkey.addPasskey`: the password, when the person has one. */
+export const confirmPasskeyRegistration = createServerFn({ method: "POST" })
+  .middleware([authedEnrolment])
+  .validator(z.object({ password: z.string().max(256) }))
+  .handler(async ({ data, context: { actor } }) => {
+    if (hasPassword(actor.id) && !(await passwordMatches(actor.id, data.password)))
+      throw new Validation("Password is incorrect", { code: "invalid_password", fields: { password: "invalid" } })
+    tx(() => grantPasskeyRegistration(actor.id))
+    return { ok: true }
+  })
+
 export const fetchPasskeys = createServerFn({ method: "GET" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .handler(({ context: { actor } }) => listPasskeys(actor))
 
 export const passkeysQuery = queryOptions({ queryKey: ["profile", "passkeys"], queryFn: () => fetchPasskeys() })
 
 export const renameOwnPasskey = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ id: z.number().int(), name: z.string().trim().min(1).max(60) }))
   .handler(({ data, context: { actor } }) => {
     tx(() => renamePasskey(actor, data.id, data.name))
@@ -205,7 +214,7 @@ export const renameOwnPasskey = createServerFn({ method: "POST" })
   })
 
 export const deleteOwnPasskey = createServerFn({ method: "POST" })
-  .middleware([authed])
+  .middleware([authedEnrolment])
   .validator(z.object({ id: z.number().int() }))
   .handler(({ data, context: { actor } }) => {
     tx(() => deletePasskey(actor, data.id))

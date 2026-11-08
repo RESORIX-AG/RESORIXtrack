@@ -38,9 +38,9 @@ export const fetchAdminSettings = createServerFn({ method: "GET" })
 
 export const saveSettingsFn = createServerFn({ method: "POST" })
   .middleware([authed])
-  .validator(z.object({ changes: settingsSchema.partial() }))
+  .validator(z.object({ changes: settingsSchema.partial(), validFrom: z.iso.date().optional() }))
   .handler(({ data, context: { actor } }) => {
-    tx(() => saveSettings(actor, data.changes))
+    tx(() => saveSettings(actor, data.changes, data.validFrom))
     return { ok: true }
   })
 

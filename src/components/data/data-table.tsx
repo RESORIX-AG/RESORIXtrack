@@ -11,8 +11,9 @@
  * - sorting by clicking headers (aria-sort), global search (deferred filtering), pagination when > pageSize
  *   (`pageSize={false}` shows every row)
  * - long lists are virtualised: `virtual`, or automatically above VIRTUAL_FROM rows when pagination is off.
- *   Rows render inside a scroll container with a sticky header; only the rows in view are in the DOM, `aria-rowcount`/`aria-rowindex` tell screen readers the full size. Virtual tables use
- *   fixed column widths (meta.width) so columns never jump while scrolling.
+ *   Rows render inside a scroll container with a sticky header; only the rows in view are in the DOM, `aria-rowcount`/`aria-rowindex` tell screen readers the full size.
+ * - fixed column widths (meta.width) lay the table out by its columns, not its content, so columns never jump
+ *   while scrolling or when the data changes (another month, another filter). Virtual tables always do.
  * - `infinite` loads the next server page when the end comes into view (cursor-paginated lists)
  * - optional row selection (checkbox column) with `onSelectionChange`
  * - numeric columns right-aligned with tabular numerals (meta.numeric)
@@ -257,12 +258,20 @@ function PlainTable<T extends RowData>({
   stateKey: string
 }) {
   const leafHeaders = headers.at(-1)?.headers ?? []
+  const fixed = leafHeaders.some((h) => h.column.columnDef.meta?.width)
   return (
     // wide tables scroll inside the card, never the page
     <div className={cn(card && "overflow-x-auto rounded-xl border bg-card")}>
       {/* desktop table */}
-      <table className="hidden w-full caption-bottom text-sm md:table">
+      <table className={cn("hidden w-full caption-bottom text-sm md:table", fixed && "table-fixed")}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
+        {fixed ? (
+          <colgroup>
+            {leafHeaders.map((h) => (
+              <col key={h.id} style={{ width: h.column.columnDef.meta?.width }} />
+            ))}
+          </colgroup>
+        ) : null}
         <TableHead headers={headers} stateKey={stateKey} />
         <tbody>
           {skeleton

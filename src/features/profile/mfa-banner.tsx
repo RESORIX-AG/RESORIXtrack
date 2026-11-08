@@ -5,11 +5,11 @@ import { useT } from "@/lib/i18n"
 import { useMe } from "@/lib/session"
 import { securityQuery } from "./api"
 
-/** Non-dismissable reminder while two-factor is required (policy or v1 re-enrolment) and not set up yet. */
+/** Non-dismissable reminder while two-factor is required by policy and not set up yet. */
 export function MfaBanner() {
   const t = useT()
   const me = useMe()
-  const candidate = (me.mfaRequired || me.mfaReenrolRequired) && !me.twoFactorEnabled
+  const candidate = me.mfaRequired && !me.twoFactorEnabled
   // an account linked to single sign-on counts as compliant: ask the server only when it could matter
   const { data } = useQuery({ ...securityQuery, enabled: candidate })
   if (!candidate || !data?.mfaDue) return null

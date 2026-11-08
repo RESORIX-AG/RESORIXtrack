@@ -73,7 +73,6 @@
     "first_start": "Inizio",
     "last_end": "Fine",
     "edited": "Modificato",
-    "worklog": "Diario di lavoro",
     "name": "Nome",
     "team": "Team",
     "taken": "Godute",
@@ -120,7 +119,6 @@
     "people_one": "{count} persona",
     "people_other": "{count} persone",
     "no_project": "Senza progetto",
-    "customer": "Cliente",
     "entry_id": "ID",
     "email": "E-mail",
     "kind": "Tipo",
@@ -156,7 +154,8 @@
     "supplement_percent": "Supplemento %",
     "time_credit": "Accredito di tempo",
     "payroll": "Salario",
-    "supplement_note": "Supplemento domenica/festivi {percent} %"
+    "supplement_note": "Supplemento domenica/festivi {percent} %",
+    "project_time": "Progetti"
   },
   "tab": {
     "timesheet": "Foglio ore",
@@ -181,7 +180,6 @@
   "all_projects": "Tutti i progetti",
   "project": "Progetto",
   "people": "Persone",
-  "customer": "Cliente",
   "no_project": "Senza progetto",
   "no_logs": "Nessun lavoro registrato in questo periodo.",
   "project_no_hours": "Nessuna ora su questo progetto in questo periodo.",

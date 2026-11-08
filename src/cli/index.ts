@@ -7,6 +7,7 @@
 import { readdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { assertProductionConfig } from "@/server/env"
 
 export type Command = { summary: string; run: (args: string[]) => Promise<number | undefined> | number | undefined }
 type Loader = () => Promise<unknown>
@@ -45,6 +46,8 @@ async function main(): Promise<number> {
     for (const [i, key] of names.entries()) console.log(`  ${key.padEnd(18)}${loaded[i].summary}`)
     return name && name !== "help" ? 1 : 0
   }
+  // decrypt-backup also runs on a workstation with only the backup password at hand
+  if (name !== "decrypt-backup") assertProductionConfig()
   return (await (await load(commands[name])).run(rest)) ?? 0
 }
 

@@ -1,5 +1,6 @@
 {
   "common": {
+    "changes_from_title": "Dès quand les modifications s'appliquent-elles ?",
     "range": "{from}–{to} sur {total}"
   },
   "roles": {
@@ -65,7 +66,19 @@
     "recording_simplified_short": "Simplifiée",
     "recording_waived_short": "Renonciation",
     "regular_night_work": "Travail de nuit régulier",
-    "regular_night_work_help": "LTr art. 17b : 10 % de crédit de temps"
+    "regular_night_work_help": "LTr art. 17b : 10 % de crédit de temps",
+    "terms_from": "Modifications valables dès le",
+    "terms_from_help": "Les jours précédents gardent les anciennes valeurs.",
+    "vacation_days_help": "Plein temps, semaine de 5 jours ; moins de jours de travail la réduisent",
+    "earlier": "Antérieur",
+    "earlier_terms": "Conditions jusqu'au {date}",
+    "earlier_period": "Employé du {start} au {end}",
+    "current_terms_from": "Conditions actuelles depuis le {date}",
+    "rehire": "Réengager",
+    "rehire_title": "Réengager {name}",
+    "rehire_help": "Un nouvel emploi commence. L'ancien reste tel quel, ses mois inchangés.",
+    "rehire_start": "Début du nouvel emploi",
+    "rehired": "Réengagé"
   },
   "schedule": {
     "title": "Horaire de travail",
@@ -95,7 +108,8 @@
     "new_title": "Nouvel horaire",
     "planned": "Prévu",
     "reason_required": "Motif (obligatoire)",
-    "reason_placeholder": "p. ex. nouveau contrat"
+    "reason_placeholder": "p. ex. nouveau contrat",
+    "gap": "Aucun horaire du {from} au {to} : ces jours n'ont pas d'objectif. Ajoutez une version dès le {from}."
   },
   "vacation": {
     "title": "Droit par année",
@@ -184,6 +198,7 @@
       "attachment": "Document",
       "signoff": "Validation du mois",
       "api_token": "Jeton API",
+      "holiday": "Jour férié",
       "work_log": "Journal de travail",
       "project": "Projet",
       "team_lead": "Responsable / suppléant"
@@ -231,6 +246,8 @@
       "vacation_days_per_year": "Jours de vacances",
       "is_active": "Actif",
       "holiday_calendar_id": "Calendrier des fériés",
+      "calendar_id": "Calendrier",
+      "fraction": "Part de la journée",
       "note": "Note",
       "start_half": "Début",
       "end_half": "Fin",
@@ -261,7 +278,15 @@
       "minutes_thu": "Je",
       "minutes_fri": "Ve",
       "minutes_sat": "Sa",
-      "minutes_sun": "Di"
+      "minutes_sun": "Di",
+      "scheduled_end_at": "Sortie planifiée",
+      "capabilities": "Autorisations",
+      "locale": "Langue",
+      "legal_weekly_max_hours": "Durée max. légale",
+      "recording_mode": "Saisie du temps",
+      "arg_exempt": "Exclu de la loi sur le travail",
+      "regular_night_work": "Travail de nuit régulier",
+      "birth_date": "Date de naissance"
     },
     "sources": {
       "web": "Web",
@@ -273,7 +298,8 @@
       "demo": "Démo",
       "import": "Import",
       "cli": "Ligne de commande",
-      "worker": "Automatique"
+      "worker": "Automatique",
+      "setup": "Configuration initiale"
     }
   },
   "backups": {
@@ -325,7 +351,8 @@
       "reset_requested": "Réinitialisation demandée",
       "mfa_failed": "Code incorrect",
       "invalid_mfa": "Code incorrect",
-      "passkey": "Connecté avec une clé d'accès"
+      "passkey": "Connecté avec une clé d'accès",
+      "mfa_required": "Mot de passe seul non autorisé"
     }
   },
   "branding": {
@@ -386,9 +413,6 @@
     "n_holidays_one": "{count} jour férié",
     "n_holidays_other": "{count} jours fériés",
     "usage": "{teams} équipes, {users} personnes",
-    "from_preset": "Depuis un modèle",
-    "empty_calendar": "Vide",
-    "preset": "Canton ou modèle",
     "preset_years": "Jours fériés pour {from} et {to}",
     "preset_installed": "Calendrier créé",
     "use_as_default": "Par défaut pour l'entreprise",
@@ -414,6 +438,11 @@
     "canton": "Canton",
     "preset_hint": "Complété chaque année en octobre",
     "no_preset": "Aucun modèle",
+    "always_included": "Toujours inclus",
+    "optional_days": "Jours à choix",
+    "optional_days_hint": "Les jours cochés sont ajoutés chaque année. Les jours communaux valent dans la majeure partie du canton.",
+    "not_in": "Sauf à {communes}",
+    "not_in_more": "Sauf à {communes} et {count} autres",
     "kind": {
       "federal": "Fédéral",
       "cantonal": "Cantonal",
@@ -432,7 +461,6 @@
     "deputies": "Suppléants",
     "members": "Membres",
     "calendar": "Calendrier des fériés",
-    "calendar_default": "Par défaut",
     "color": "Couleur",
     "no_lead": "Sans responsable",
     "no_lead_help": "Sans responsable, les RH décident des demandes.",
@@ -484,7 +512,8 @@
     "key_invalid": "Utilise des minuscules, chiffres et _",
     "sort": "Ordre",
     "delete_title": "Supprimer {name} ?",
-    "deleted": "Type supprimé"
+    "deleted": "Type supprimé",
+    "counting_locked": "Utilisé : catégorie et décompte sont fixes."
   },
   "settings": {
     "title": "Paramètres",
@@ -500,18 +529,18 @@
     },
     "groups": {
       "company": "Entreprise",
-      "defaults": "Valeurs par défaut",
       "hours": "Heures et jours fériés",
+      "vacation": "Vacances",
       "corrections": "Corrections et responsables",
       "sick": "Annonces de maladie",
-      "worklog": "Journal de travail",
       "compliance": "Contrôles (LTr)",
       "retention": "Conservation",
       "mfa": "Double authentification",
       "api": "API",
       "sessions": "Journal des connexions",
       "privacy": "Déclaration de confidentialité",
-      "surcharges": "Travail du dimanche et des jours fériés"
+      "surcharges": "Travail du dimanche et des jours fériés",
+      "projects": "Projets"
     },
     "units": {
       "hhmm": "h:mm",
@@ -522,22 +551,18 @@
     },
     "fields": {
       "company_name": "Nom de l'entreprise",
-      "default_timezone": "Fuseau horaire",
-      "default_locale": "Langue",
+      "default_timezone": "Fuseau horaire de l'entreprise",
+      "default_locale": "Langue par défaut",
       "default_vacation_days": "Jours de vacances / an",
       "fulltime_weekly_minutes": "Semaine à plein temps",
       "holiday_mode": "Les fériés réduisent le dû",
       "holiday_work_surcharge_percent": "Majoration dimanche/jour férié",
-      "vacation_prorate_workdays": "Vacances au prorata des jours travaillés",
       "reason_required_for_past_edits": "Motif pour les modifications passées",
       "lead_can_edit_schedules": "Les responsables modifient les horaires",
       "lead_can_adjust_balances": "Les responsables corrigent les soldes",
       "clock_reminder_hours": "Rappel de départ après",
       "sick_self_report_backdate_days": "Annonce rétroactive jusqu'à",
       "sick_self_report_max_days": "Durée max. d'annonce",
-      "worklog_mode": "Journal de travail",
-      "worklog_required_percent": "Part requise",
-      "worklog_project_required": "Projet obligatoire",
       "compliance_enabled": "L'entreprise est soumise à la loi sur le travail",
       "break_enforcement": "Bloquer le timbrage avant la pause légale minimale et le repos quotidien",
       "weekly_max_minutes": "Durée maximale légale de la semaine",
@@ -549,9 +574,13 @@
       "api_tokens_enabled": "Jetons API personnels",
       "login_log_retention_days": "Conserver le journal des connexions",
       "privacy_notice": "Texte sur /privacy",
-      "holiday_work_surcharge_mode": "Majoration en"
+      "holiday_work_surcharge_mode": "Majoration en",
+      "project_mode": "Projets sur les saisies de temps"
     },
     "help": {
+      "default_timezone": "Compte les jours de l'entreprise (validation, rappels) ; valeur proposée pour les nouvelles personnes.",
+      "default_locale": "Valeur proposée pour les nouvelles personnes et la page de connexion.",
+      "default_vacation_days": "Par défaut pour les nouvelles personnes",
       "fulltime_weekly_minutes": "Horaire par défaut, p. ex. 42:00",
       "holiday_work_surcharge_percent": "LTr art. 19 : 50 % pour le travail temporaire",
       "clock_reminder_hours": "0 = désactivé",
@@ -559,26 +588,28 @@
       "night_work_permitted": "Les constats ne sont plus affichés qu'à titre d'info",
       "sunday_work_permitted": "Les constats ne sont plus affichés qu'à titre d'info",
       "retention_years": "Au moins 5 (OLT 1 art. 73)",
-      "worklog_required_percent": "Part du temps travaillé par jour",
       "compliance_enabled": "Sont exclus p. ex. les administrations publiques, l'agriculture, les ménages privés (art. 2 LTr)",
       "break_enforcement": "Art. 15 et 15a LTr. Une saisie manuelle reste possible.",
-      "holiday_work_surcharge_mode": "Salaire : rapporté pour la paie. Crédit de temps : selon CCT."
+      "holiday_work_surcharge_mode": "Salaire : rapporté pour la paie. Crédit de temps : selon CCT.",
+      "project_mode": "Obligatoire : chaque saisie de travail doit avoir un projet avant de clôturer le mois."
     },
     "options": {
       "holiday_mode": {
         "scheduled": "Jours travaillés",
         "prorata": "Au prorata"
       },
-      "worklog_mode": {
-        "off": "Désactivé",
-        "optional": "Facultatif",
-        "required": "Obligatoire"
-      },
       "holiday_work_surcharge_mode": {
         "payroll": "Salaire",
         "time_credit": "Crédit de temps"
+      },
+      "project_mode": {
+        "off": "Désactivé",
+        "optional": "Facultatif",
+        "required": "Obligatoire"
       }
-    }
+    },
+    "valid_from": "Modifications valables dès le",
+    "valid_from_help": "Les jours précédents gardent les anciennes règles ; jamais avant le dernier mois validé."
   },
   "api_keys": {
     "revoked": "Révoquée",

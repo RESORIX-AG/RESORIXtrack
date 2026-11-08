@@ -6,21 +6,20 @@ import {
   addCompanyDay,
   calendarYearWithKinds,
   companyDayOptions,
-  createCalendarFromPreset,
   deleteCalendar,
   deleteHoliday,
-  holidayPresets,
   importPreset,
   listCalendars,
   saveCalendar,
   saveHoliday,
   setDefaultCalendar,
 } from "@/server/services/holiday-calendars"
-import { companyDayKey } from "@/server/services/holiday-calendars.schemas"
+import { companyDayKey, presetDays } from "@/server/services/holiday-calendars.schemas"
+import { holidayPresets } from "@/server/services/holiday-presets"
 import { requireAdmin } from "@/server/services/permissions"
 
 const id = z.number().int().positive()
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const day = z.iso.date()
 const year = z.number().int().min(1990).max(2100)
 
 export const fetchCalendars = createServerFn({ method: "GET" })
@@ -32,7 +31,7 @@ export const fetchCalendarYear = createServerFn({ method: "GET" })
   .validator(z.object({ id, year }))
   .handler(({ data, context: { actor } }) => calendarYearWithKinds(actor, data.id, data.year))
 
-/** Swiss presets: the 26 cantons (`CH-ZH`) and local presets (`ch-fr-fribourg`). */
+/** Swiss presets: the 26 cantons (`CH-ZH`) with this year's statutory and selectable days. */
 export const fetchHolidayCatalog = createServerFn({ method: "GET" })
   .middleware([authed])
   .validator(z.object({ locale: z.string().max(8) }))
@@ -60,6 +59,7 @@ export const saveCalendarFn = createServerFn({ method: "POST" })
       id: id.nullable(),
       name: z.string().max(120),
       regionCode: z.string().max(32),
+      presetDays,
       description: z.string().max(500),
       isDefault: z.boolean(),
     }),
@@ -83,14 +83,6 @@ export const deleteCalendarFn = createServerFn({ method: "POST" })
   .handler(({ data, context: { actor } }) => {
     tx(() => deleteCalendar(actor, data.id))
     return { ok: true }
-  })
-
-export const createFromPresetFn = createServerFn({ method: "POST" })
-  .middleware([authed])
-  .validator(z.object({ key: z.string().max(32), years: z.array(year).min(1).max(5), makeDefault: z.boolean() }))
-  .handler(({ data, context: { actor } }) => {
-    requireAdmin(actor)
-    return { id: tx(() => createCalendarFromPreset(data.key, { years: data.years, makeDefault: data.makeDefault })).id }
   })
 
 export const saveHolidayFn = createServerFn({ method: "POST" })
@@ -123,6 +115,7 @@ export const importHolidaysFn = createServerFn({ method: "POST" })
     z.object({
       calendarId: id,
       preset: z.string().max(32),
+      presetDays,
       year,
       replace: z.boolean(),
     }),

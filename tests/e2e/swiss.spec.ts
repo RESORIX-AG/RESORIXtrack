@@ -15,9 +15,11 @@ test("admin sees the holiday top-up notification", async ({ as }) => {
   await goto(page, "/")
   await page.getByRole("button", { name: /^Notifications/ }).click()
   const next = new Date().getFullYear() + 1
-  const note = page.getByRole("link", { name: new RegExp(`Public holidays ${next} added to CH-ZH .*\\(\\d+ days\\)`) })
+  const note = page.getByRole("link", {
+    name: new RegExp(`Public holidays ${next} added to Kanton Zürich \\(\\d+ days\\)`),
+  })
   await expect(note).toBeVisible()
   await note.click()
   await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?cal=\\d+&year=${next}`))
-  await expect(page.getByRole("heading", { level: 2, name: /CH-ZH/ })).toBeVisible()
+  await expect(page.getByRole("heading", { level: 2, name: /Kanton Zürich/ })).toBeVisible()
 })

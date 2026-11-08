@@ -28,7 +28,9 @@ const securityHeaders = createMiddleware({ type: "request" }).server(async ({ ne
     "frame-ancestors 'none'",
   ].join("; ")
   // Vite's dev server injects inline scripts without a nonce, so the strict policy is production-only.
-  if (isProd) setResponseHeader("Content-Security-Policy", csp)
+  // Routes serving files (logos, attachments) bring a stricter policy of their own; it must win.
+  if (isProd && !result.response.headers.has("Content-Security-Policy"))
+    setResponseHeader("Content-Security-Policy", csp)
   setResponseHeader("X-Content-Type-Options", "nosniff")
   setResponseHeader("Referrer-Policy", "same-origin")
   setResponseHeader("X-Frame-Options", "DENY")

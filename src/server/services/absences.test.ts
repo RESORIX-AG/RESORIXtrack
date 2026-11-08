@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { rawSqlite } from "@/server/db"
+import { db, rawSqlite } from "@/server/db"
+import { users } from "@/server/db/schema"
 import type { AppError } from "@/server/errors"
 import { freeze } from "@/server/time"
 import { loadActor, lockMonth, makeEntry, makeLead, makeOrg, withSettings } from "@/test/factories"
@@ -137,6 +139,20 @@ describe("vacation workflow", () => {
     expect(err(() => decideAbsence(loadActor(org.ben.id), b.id, true)).code).toBe("not_found")
   })
 
+  it("a deputy decides a request that reaches into the cover", () => {
+    makeLead(org.teamA.id, org.ben.id, { role: "deputy", validFrom: "2026-11-10" })
+    const a = vac(org.anna.id, "2026-11-09", "2026-11-11")
+    freeze("2026-11-10T08:00:00Z")
+    expect(pendingForApprover(loadActor(org.ben.id)).map((x) => x.id)).toContain(a.id)
+    expect(decideAbsence(loadActor(org.ben.id), a.id, true).status).toBe("approved")
+  })
+
+  it("requests of people who left stay in the inbox", () => {
+    const a = vac(org.anna.id, "2026-12-14")
+    db.update(users).set({ isActive: false }).where(eq(users.id, org.anna.id)).run()
+    expect(pendingForApprover(loadActor(org.lead.id)).map((x) => x.id)).toContain(a.id)
+  })
+
   it("lead records an absence directly (approved, person informed)", () => {
     const a = withOutbox(() =>
       createAbsence(loadActor(org.lead.id), { userId: org.anna.id, type: "vacation", startDate: "2026-12-14" }),
@@ -151,8 +167,10 @@ describe("vacation workflow", () => {
     ).toBe("not_found")
   })
 
-  it("HR's own requests need no approval", () => {
-    expect(vac(org.hr!.id, "2026-12-14").status).toBe("approved")
+  it("HR's own requests go to someone else like everybody's", () => {
+    const a = vac(org.hr!.id, "2026-12-14")
+    expect(a.status).toBe("pending")
+    expect(err(() => decideAbsence(loadActor(org.hr!.id), a.id, true)).code).toBe("forbidden")
   })
 
   it("previews days and vacation left", () => {
@@ -166,6 +184,21 @@ describe("vacation workflow", () => {
     expect(
       err(() => absencePreview(loadActor(org.ben.id), { userId: org.anna.id, startDate: "2026-12-21" })).code,
     ).toBe("not_found")
+  })
+
+  it("previewing a change does not count the edited request twice", () => {
+    const before = absencePreview(loadActor(org.anna.id), { startDate: "2026-12-14", type: "vacation" })
+    const req = vac(org.anna.id, "2026-12-14", "2026-12-15")
+    const input = { startDate: "2026-12-14", type: "vacation", excludeId: req.id }
+    expect(absencePreview(loadActor(org.anna.id), input).vacationAfter).toBe(before.vacationAfter)
+    expect(absencePreview(loadActor(org.anna.id), { ...input, excludeId: null }).vacationAfter).toBe(
+      before.vacationAfter - 2,
+    )
+    // another person's request id changes nothing
+    const other = vac(org.ben.id, "2026-12-14")
+    expect(absencePreview(loadActor(org.anna.id), { ...input, excludeId: other.id }).vacationAfter).toBe(
+      before.vacationAfter - 2,
+    )
   })
 })
 
@@ -270,6 +303,17 @@ describe("sick reports", () => {
         .days,
     ).toBe(2)
     expect(err(() => updateAbsence(loadActor(org.anna.id), a.id, { startDate: "2026-11-04" })).code).toBe("forbidden")
+  })
+
+  it("extending one's own sick report later keeps the backdating limit and informs the lead", () => {
+    const a = createAbsence(loadActor(org.anna.id), { type: "sick", startDate: "2026-11-02" })
+    const before = kinds(org.lead.id).filter((k) => k === "absence_reported").length
+    withOutbox(() => updateAbsence(loadActor(org.anna.id), a.id, { endDate: "2026-11-05" }))
+    expect(kinds(org.lead.id).filter((k) => k === "absence_reported")).toHaveLength(before + 1)
+    freeze("2026-11-20T08:00:00Z")
+    expect(err(() => updateAbsence(loadActor(org.anna.id), a.id, { endDate: "2026-11-06" })).fields).toEqual({
+      endDate: "too_old",
+    })
   })
 })
 

@@ -1,10 +1,10 @@
 /**
- * Password hashing: Argon2id only (PHC strings, compatible with v1's argon2-cffi hashes, so imported
- * accounts keep their passwords). Never log or store a plaintext password.
+ * Password hashing: Argon2id only (PHC strings; any Argon2id hash verifies). Never log or store a plaintext
+ * password.
  */
 import { hash, verify } from "@node-rs/argon2"
 
-// argon2-cffi defaults used by v1: t=3, m=64 MiB, p=4
+// t=3, m=64 MiB, p=4
 const OPTS = { algorithm: 2 /* Argon2id */, timeCost: 3, memoryCost: 65536, parallelism: 4, outputLen: 32 } as const
 
 export function hashPassword(password: string): Promise<string> {

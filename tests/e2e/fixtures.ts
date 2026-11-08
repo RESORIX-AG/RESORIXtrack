@@ -57,9 +57,9 @@ export const isMobile = (info: TestInfo) => info.project.name === "mobile"
  */
 export const pick = <T>(info: TestInfo, desktop: T, mobile: T): T => (isMobile(info) ? mobile : desktop)
 
-/** React has hydrated the document (event handlers are attached). */
+/** React has hydrated the document and run its effects (event handlers and window shortcuts are attached). */
 export async function hydrated(page: Page) {
-  await page.waitForFunction(() => Object.keys(document.body).some((k) => k.startsWith("__reactFiber")))
+  await page.locator("html[data-hydrated]").waitFor({ state: "attached" })
 }
 
 export async function goto(page: Page, url: string) {

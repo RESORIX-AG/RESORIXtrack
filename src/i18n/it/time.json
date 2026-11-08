@@ -34,6 +34,7 @@
   "reason_placeholder": "ad es. dimenticato di timbrare l'entrata",
   "reason_other_help": "{name} riceve una notifica.",
   "tz_hint": "Orari in {tz}",
+  "delete_title": "Eliminare questa registrazione?",
   "deleted": "Registrazione eliminata",
   "confirm_delete": "Elimina registrazione",
   "history_title": "Cronologia delle modifiche",
@@ -57,7 +58,8 @@
     "start_at": "Inizio",
     "end_at": "Fine",
     "note": "Nota",
-    "is_deleted": "Eliminata"
+    "is_deleted": "Eliminata",
+    "project_id": "Progetto"
   },
   "by_other": "da un'altra persona",
   "dispute": "Contesta",
@@ -81,5 +83,15 @@
   "reason_required": "Motivo (obbligatorio)",
   "reason_delete_help": "Eliminare richiede sempre una motivazione; resta nella cronologia delle modifiche.",
   "night_credit": "Accredito notturno",
-  "surcharge_credit": "Accredito domenica/festivi"
+  "surcharge_credit": "Accredito domenica/festivi",
+  "project": "Progetto",
+  "no_project": "Nessun progetto",
+  "choose_project": "Scegli un progetto",
+  "inactive": "inattivo",
+  "project_required": "Scegli un progetto.",
+  "project_missing": "Lavoro senza progetto",
+  "project_fix_hint_one": "1 registrazione non ha ancora un progetto. È evidenziata qui sotto.",
+  "project_fix_hint_other": "{count} registrazioni non hanno ancora un progetto. Sono evidenziate qui sotto.",
+  "project_fix_done": "Tutte le registrazioni hanno un progetto.",
+  "daily_total_help": "Più totali al giorno, uno per progetto, vengono registrati uno dopo l'altro."
 }

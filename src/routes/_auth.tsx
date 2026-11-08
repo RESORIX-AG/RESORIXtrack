@@ -1,10 +1,12 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router"
 import { CompanyLogo, Wordmark } from "@/components/app/logo"
 import { ThemeMenu } from "@/components/app/theme"
+import { titleHead } from "@/lib/page-title"
 import { useBootstrap } from "@/lib/session"
 
 /** Signed-out pages (sign in, password reset, invitation, first-run setup): one centred card on the hero gradient. */
 export const Route = createFileRoute("/_auth")({
+  head: ({ matches, match }) => titleHead(match.context.bootstrap.locale, matches),
   component: AuthLayout,
 })
 

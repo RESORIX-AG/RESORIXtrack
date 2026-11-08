@@ -1,0 +1,7 @@
+-- Documents of absences in signed-off periods are part of the sealed record: no new ones, no removal, no edits.
+-- The only change allowed is the erasure on anonymisation (file gone, row marked removed), after retention.
+CREATE TRIGGER IF NOT EXISTS trg_signoff_attachments_ins BEFORE INSERT ON attachments FOR EACH ROW WHEN EXISTS (SELECT 1 FROM absences a JOIN month_signoffs s ON s.user_id = a.user_id WHERE a.id = NEW.absence_id AND s.reopened_at IS NULL AND a.start_date <= s.period_end_date AND a.end_date >= s.period_start_date) BEGIN SELECT RAISE(ABORT, 'resorixtrack: period signed off'); END;
+--> statement-breakpoint
+CREATE TRIGGER IF NOT EXISTS trg_signoff_attachments_upd BEFORE UPDATE ON attachments FOR EACH ROW WHEN NOT (NEW.is_deleted = 1 AND NEW.size = 0 AND NEW.filename = 'removed' AND NEW.absence_id = OLD.absence_id) AND EXISTS (SELECT 1 FROM absences a JOIN month_signoffs s ON s.user_id = a.user_id WHERE a.id = OLD.absence_id AND s.reopened_at IS NULL AND a.start_date <= s.period_end_date AND a.end_date >= s.period_start_date) BEGIN SELECT RAISE(ABORT, 'resorixtrack: period signed off'); END;
+--> statement-breakpoint
+CREATE TRIGGER IF NOT EXISTS trg_signoff_attachments_del BEFORE DELETE ON attachments FOR EACH ROW WHEN EXISTS (SELECT 1 FROM absences a JOIN month_signoffs s ON s.user_id = a.user_id WHERE a.id = OLD.absence_id AND s.reopened_at IS NULL AND a.start_date <= s.period_end_date AND a.end_date >= s.period_start_date) BEGIN SELECT RAISE(ABORT, 'resorixtrack: period signed off'); END;

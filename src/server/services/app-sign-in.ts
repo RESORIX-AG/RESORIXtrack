@@ -12,6 +12,7 @@ import { APIError } from "better-auth/api"
 import { and, eq } from "drizzle-orm"
 import { isRecord } from "@/lib/guards"
 import { API_SCOPES, auth, withSignInReason } from "../auth"
+import { PEER_HEADER } from "../client-ip"
 import { db } from "../db"
 import { account, session, type User, users } from "../db/schema"
 import { env } from "../env"
@@ -20,7 +21,7 @@ import { hashPassword, verifyPassword } from "../password"
 import { utcnow } from "../time"
 import { breakGlassAllowed, consumeBreakGlass } from "./break-glass"
 import { loginThrottled, recordLoginAttempt, recordThrottled } from "./login-log"
-import { mfaRequiredFor } from "./mfa-policy"
+import { passwordAloneRefused } from "./mfa-policy"
 import { oidcEnabled } from "./oidc"
 import { getSetting } from "./settings"
 
@@ -95,7 +96,7 @@ async function checkPassword(email: string, password: string, headers: Headers):
 /** Headers passed on to Better Auth: client address and agent for the log; never the app's other headers. */
 function forwarded(headers: Headers, cookie?: string): Headers {
   const h = new Headers()
-  for (const name of ["user-agent", "x-forwarded-for", "x-real-ip"]) {
+  for (const name of ["user-agent", "x-forwarded-for", PEER_HEADER]) {
     const v = headers.get(name)
     if (v) h.set(name, v)
   }
@@ -179,7 +180,7 @@ export async function appSignIn(input: AppSignInInput): Promise<AppKey> {
       })
     await verifySecondFactor(user, input.password, code, headers)
     logged = true
-  } else if (mfaRequiredFor(user)) {
+  } else if (passwordAloneRefused(user)) {
     throw new Forbidden("Two-factor authentication is required for your account: set it up in the web app first", {
       code: "mfa_required",
     })

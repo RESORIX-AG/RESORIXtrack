@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react"
 import type * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -52,6 +53,7 @@ function SheetContent({
   size?: SheetSize
   showCloseButton?: boolean
 }) {
+  const t = useT()
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -73,7 +75,7 @@ function SheetContent({
             render={<Button variant="ghost" className="absolute top-3 right-3" size="icon" />}
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("common.close")}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

@@ -6,11 +6,9 @@
  */
 import { createHash } from "node:crypto"
 import {
-  copyFileSync,
   createWriteStream,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -19,7 +17,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs"
-import { tmpdir } from "node:os"
 import path from "node:path"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
@@ -93,7 +90,7 @@ export function appVersion(): string {
 
 export function backupPassword(): string {
   const pw = env.backupPassword
-  if (!pw || pw.length < MIN_BACKUP_PASSWORD_LENGTH)
+  if (!pw || pw.length < MIN_BACKUP_PASSWORD_LENGTH || pw.startsWith("change-me"))
     throw new Validation("BACKUP_PASSWORD is not configured on the server (at least 12 characters)", {
       code: "backup_password_missing",
     })
@@ -240,7 +237,8 @@ export function rotateBackups(keep = env.backupKeep): number {
     .sort()
     .toReversed()
   let removed = 0
-  for (const f of auto.slice(Math.max(0, keep))) {
+  // the newest backup always stays
+  for (const f of auto.slice(Math.max(1, keep))) {
     unlinkSync(path.join(env.backupsDir, f))
     removed++
   }
@@ -249,19 +247,12 @@ export function rotateBackups(keep = env.backupKeep): number {
 
 // ------------------------------------------------------------------ restore (CLI only)
 
-export class V1BackupError extends Error {
-  constructor(readonly extractedTo: string) {
-    super(`This is a RESORIXtrack 1.x backup. Import it with: rt import-v1 --data ${extractedTo}`)
-    this.name = "V1BackupError"
-  }
-}
-
 export interface OpenedBackup {
   manifest: Manifest
   files: Record<string, Uint8Array>
 }
 
-/** Decrypt (in memory), unzip and verify a backup. Detects v1 archives (extracted to a private temp dir). */
+/** Decrypt (in memory), unzip and verify a backup. */
 export async function openBackup(file: string, password: string): Promise<OpenedBackup> {
   if (!isEncryptedFile(file)) throw new Validation("Not an encrypted RESORIXtrack backup (.zip.enc)")
   const { data } = await decryptFileToBuffer(file, password)
@@ -275,9 +266,8 @@ export async function openBackup(file: string, password: string): Promise<Opened
   if (!rawManifest || !files[DB_ENTRY]) throw new Validation("Not a RESORIXtrack backup archive")
   const stored = readManifest(rawManifest)
   if (stored.app !== "resorixtrack") throw new Validation("Not a RESORIXtrack backup archive")
-  if ((stored.format ?? 0) < FORMAT || (stored.version ?? "").startsWith("1.")) {
-    throw new V1BackupError(extractV1(files))
-  }
+  if ((stored.format ?? 0) < FORMAT || (stored.version ?? "").startsWith("1."))
+    throw new Validation("This backup is from RESORIXtrack 1.x and cannot be restored")
   const parsed = ManifestSchema.safeParse(stored)
   if (!parsed.success) throw new Validation("Not a RESORIXtrack backup archive")
   const manifest = parsed.data
@@ -286,18 +276,6 @@ export async function openBackup(file: string, password: string): Promise<Opened
     if (!f || f.length !== meta.size || sha256(f) !== meta.sha256) throw new Validation(`Checksum mismatch: ${name}`)
   }
   return { manifest, files }
-}
-
-/** v1 layout for `rt import-v1 --data <dir>`: resorixtrack.db + attachments/ (+ branding/). */
-function extractV1(files: Record<string, Uint8Array>): string {
-  const dir = mkdtempSync(path.join(tmpdir(), "resorixtrack-v1-"))
-  mkdirSync(path.join(dir, "attachments"), { mode: 0o700 })
-  writeFileSync(path.join(dir, DB_ENTRY), files[DB_ENTRY], { mode: 0o600 })
-  for (const [name, data] of Object.entries(files)) {
-    const m = name.match(/^attachments\/([0-9a-f]{32})$/)
-    if (m) writeFileSync(path.join(dir, "attachments", m[1]), data, { mode: 0o600 })
-  }
-  return dir
 }
 
 export interface ExtractResult {
@@ -312,9 +290,8 @@ const safeEntry = (name: string) =>
   /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(name) && !name.includes("..")
 
 /**
- * Decrypt (in memory) a v1 or v2 backup and write its files into `outDir` (new or empty). Nothing is written
- * anywhere else, and the decrypted ZIP itself never touches the disk. A v1 result can be imported with
- * `rt import-v1 --data <outDir>`.
+ * Decrypt (in memory) a backup and write its files into `outDir` (new or empty). Nothing is written anywhere
+ * else, and the decrypted ZIP itself never touches the disk.
  */
 export async function extractBackup(file: string, password: string, outDir: string): Promise<ExtractResult> {
   if (!isEncryptedFile(file)) throw new Validation("Not an encrypted RESORIXtrack backup (.zip.enc)")
@@ -354,19 +331,9 @@ export async function extractBackup(file: string, password: string, outDir: stri
 export interface RestoreResult {
   manifest: Manifest
   attachments: number
-  safetyCopy: string | null
 }
 
-/**
- * Replace the database (and attachments/branding) with the backup's. The app must be stopped.
- * The current database is checkpointed and kept as `resorixtrack.db.before-restore-<stamp>`.
- */
-export function restoreBackup(
-  opened: OpenedBackup,
-  opts: { databasePath?: string; dataDir?: string } = {},
-): RestoreResult {
-  const dbPath = opts.databasePath ?? env.databasePath
-  const dataDir = opts.dataDir ?? env.dataDir
+function checkedImage(opened: OpenedBackup): Buffer {
   const image = rollbackJournal(Buffer.from(opened.files[DB_ENTRY]))
   const check = new Database(image)
   try {
@@ -379,37 +346,117 @@ export function restoreBackup(
   } finally {
     check.close()
   }
+  return image
+}
 
-  mkdirSync(path.dirname(dbPath), { recursive: true })
-  let safetyCopy: string | null = null
-  if (existsSync(dbPath)) {
-    const cur = new Database(dbPath)
-    try {
-      cur.pragma("wal_checkpoint(TRUNCATE)")
-    } finally {
-      cur.close()
-    }
-    safetyCopy = `${dbPath}.before-restore-${stamp(new Date())}`
-    copyFileSync(dbPath, safetyCopy)
-  }
-  for (const ext of ["-wal", "-shm"]) rmSync(`${dbPath}${ext}`, { force: true })
-  writeFileSync(`${dbPath}.restore-tmp`, image, { mode: 0o600 })
-  renameSync(`${dbPath}.restore-tmp`, dbPath)
+const ASIDE = ".before-restore-"
 
-  const attDir = path.join(dataDir, "attachments")
-  const brandDir = path.join(dataDir, "branding")
+/** Move `target` to `<target>.before-restore-<stamp>`; null when there is nothing to move. */
+function setAside(target: string, at: string): string | null {
+  if (!existsSync(target)) return null
+  const aside = `${target}${ASIDE}${at}`
+  renameSync(target, aside)
+  return aside
+}
+
+/** Delete every set-aside copy of `target`, also those an earlier release left behind. */
+function removeSetAside(target: string): void {
+  const dir = path.dirname(target)
+  if (!existsSync(dir)) return
+  const prefix = `${path.basename(target)}${ASIDE}`
+  for (const f of readdirSync(dir).filter((name) => name.startsWith(prefix)))
+    rmSync(path.join(dir, f), { recursive: true, force: true })
+}
+
+function putBack(target: string, aside: string | null, existed: boolean): void {
+  if (aside) {
+    rmSync(target, { recursive: true, force: true })
+    renameSync(aside, target)
+  } else if (!existed) rmSync(target, { recursive: true, force: true })
+}
+
+function logoFiles(brandDir: string): Map<string, Buffer> {
+  const out = new Map<string, Buffer>()
+  if (!existsSync(brandDir)) return out
+  for (const f of readdirSync(brandDir, { withFileTypes: true }))
+    if (f.isFile() && BRANDING_RE.test(f.name)) out.set(f.name, readFileSync(path.join(brandDir, f.name)))
+  return out
+}
+
+function replaceLogos(brandDir: string, logos: Map<string, Uint8Array>): void {
+  mkdirSync(brandDir, { recursive: true })
+  for (const f of logoFiles(brandDir).keys()) unlinkSync(path.join(brandDir, f))
+  for (const [name, data] of logos) writeFileSync(path.join(brandDir, name), data)
+}
+
+function writeAttachments(attDir: string, files: Record<string, Uint8Array>): number {
   mkdirSync(attDir, { recursive: true })
   let count = 0
-  for (const [name, data] of Object.entries(opened.files)) {
+  for (const [name, data] of Object.entries(files)) {
     const att = name.match(/^attachments\/([^/]+)$/)
     if (att && ATTACHMENT_RE.test(att[1])) {
       writeFileSync(path.join(attDir, att[1]), data, { mode: 0o600 })
       count++
     }
   }
-  const logos = Object.keys(opened.files).filter((n) => n.startsWith("branding/") && BRANDING_RE.test(n.slice(9)))
-  mkdirSync(brandDir, { recursive: true })
-  for (const f of readdirSync(brandDir).filter((name) => BRANDING_RE.test(name))) unlinkSync(path.join(brandDir, f))
-  for (const n of logos) writeFileSync(path.join(brandDir, n.slice(9)), opened.files[n])
-  return { manifest: opened.manifest, attachments: count, safetyCopy }
+  return count
+}
+
+/**
+ * Replace the database (and attachments/branding) with the backup's. The app must be stopped. The current
+ * database and documents are unencrypted, so they are set aside only while the restore runs: deleted when it
+ * succeeds, put back when it fails. Documents stay as they are when the backup was made without them.
+ */
+export function restoreBackup(
+  opened: OpenedBackup,
+  opts: { databasePath?: string; dataDir?: string } = {},
+): RestoreResult {
+  const dbPath = opts.databasePath ?? env.databasePath
+  const dataDir = opts.dataDir ?? env.dataDir
+  const attDir = path.join(dataDir, "attachments")
+  const brandDir = path.join(dataDir, "branding")
+  const withDocuments = opened.manifest.includeAttachments
+  const image = checkedImage(opened)
+  const logos = new Map(
+    Object.entries(opened.files)
+      .filter(([n]) => n.startsWith("branding/") && BRANDING_RE.test(n.slice(9)))
+      .map(([n, data]) => [n.slice(9), data]),
+  )
+
+  mkdirSync(path.dirname(dbPath), { recursive: true })
+  const had = { db: existsSync(dbPath), att: existsSync(attDir) }
+  const previousLogos = logoFiles(brandDir)
+  const at = stamp(new Date())
+  let dbAside: string | null = null
+  let attAside: string | null = null
+  let count = 0
+  try {
+    if (had.db) {
+      const cur = new Database(dbPath)
+      try {
+        cur.pragma("wal_checkpoint(TRUNCATE)")
+      } finally {
+        cur.close()
+      }
+    }
+    for (const ext of ["-wal", "-shm"]) rmSync(`${dbPath}${ext}`, { force: true })
+    dbAside = setAside(dbPath, at)
+    writeFileSync(`${dbPath}.restore-tmp`, image, { mode: 0o600 })
+    renameSync(`${dbPath}.restore-tmp`, dbPath)
+    // documents newer than the backup (or purged since) must not stay around without a row
+    if (withDocuments) {
+      attAside = setAside(attDir, at)
+      count = writeAttachments(attDir, opened.files)
+    }
+    replaceLogos(brandDir, logos)
+  } catch (err) {
+    rmSync(`${dbPath}.restore-tmp`, { force: true })
+    putBack(dbPath, dbAside, had.db)
+    if (withDocuments) putBack(attDir, attAside, had.att)
+    replaceLogos(brandDir, previousLogos)
+    throw err
+  }
+  removeSetAside(dbPath)
+  removeSetAside(attDir)
+  return { manifest: opened.manifest, attachments: count }
 }

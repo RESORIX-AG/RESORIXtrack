@@ -6,17 +6,18 @@
 import { and, eq, inArray } from "drizzle-orm"
 import type { z } from "zod"
 import { db } from "../db"
-import { monthSignoffs, projects, teams, type User, type WorkLog } from "../db/schema"
+import { monthSignoffs, projects, teams, type User } from "../db/schema"
 import { Forbidden, Validation } from "../errors"
-import { addDays, dayBoundsUtc, iso, localToday, monthBounds, rangeBoundsUtc } from "../time"
+import { addDays, dayBoundsUtc, iso, localClock, localDateOf, localToday, monthBounds, rangeBoundsUtc } from "../time"
 import { absenceTypesById } from "./absence-types"
 import { absencesInRange, clippedDays, minDay, userNames } from "./absences"
-import { computeDays, summarize, timeBalance, vacationAccount } from "./accounts"
+import { computeDaysFrom, loadContext, personAccounts, summarize, timeBalance, vacationAccount } from "./accounts"
 import { editedEntryIds, entriesBetween } from "./entries"
-import { type Actor, isManager, requireView } from "./permissions"
-import { getAllSettings, getSetting } from "./settings"
+import { type Actor, clampFrom, isManager, requireView, seesDate } from "./permissions"
+import { type ProjectItem, projectItems } from "./project-time"
+import { getAllSettings, getSetting, settingsTimeline } from "./settings"
 import { scopeUsers } from "./signoffs"
-import { logsBetween, worklogConfig } from "./worklog"
+import { personTimeline } from "./timeline"
 
 export { balancesInput, rangeInput, timesheetInput } from "./reports.schemas"
 
@@ -28,9 +29,6 @@ function checkRange(from: string, to: string): void {
     throw new Validation("Range too large (max 2 years)", { fields: { to: "too_long" } })
 }
 
-const localTime = (at: string, tz: string) =>
-  Temporal.Instant.from(at).toZonedDateTimeISO(tz).toPlainTime().toString({ smallestUnit: "minute" })
-const localDate = (at: string, tz: string) => Temporal.Instant.from(at).toZonedDateTimeISO(tz).toPlainDate().toString()
 const emptyCounts = (): Record<string, number> => ({})
 
 function pushTo<T>(map: Record<string, T[]>, key: string, item: T): void {
@@ -51,7 +49,7 @@ function teamNameMap(people: Pick<User, "teamId">[]): Map<number, string> {
   )
 }
 
-function projectMap(logs: WorkLog[]) {
+function projectMap(logs: ProjectItem[]) {
   const ids = [...new Set(logs.map((w) => w.projectId).filter((x): x is number => x != null))]
   const rows = ids.length ? db.select().from(projects).where(inArray(projects.id, ids)).all() : []
   const teamsById = teamNameMap(rows)
@@ -72,35 +70,42 @@ export function timesheet(actor: Actor, raw: z.input<typeof timesheetInput>) {
   const input = timesheetInput.parse(raw)
   const user = input.userId != null && input.userId !== actor.id ? requireView(actor, input.userId) : actor.user
   const { year, month } = input
-  const [start, end] = monthBounds(year, month)
+  const [monthStart, end] = monthBounds(year, month)
+  // a lead covering from a later day sees the month from that day on
+  const start = clampFrom(actor, user, monthStart)
   const tz = user.timezone
-  const days = computeDays(user, start, end)
+  const pre = { timeline: personTimeline(user), settings: settingsTimeline() }
+  const days = start <= end ? computeDaysFrom(loadContext(user, start, end, pre)) : []
   const today = localToday(tz)
-  const balanceBefore = timeBalance(user, addDays(start, -1)).balanceMin
+  const balanceBefore = timeBalance(user, addDays(start, -1), pre).balanceMin
   // complete days only, like the summary: today is still in progress
-  const balanceAfter = start < today ? timeBalance(user, minDay(end, addDays(today, -1))).balanceMin : balanceBefore
-  const vac = vacationAccount(user, year)
+  const balanceAfter =
+    start < today ? timeBalance(user, minDay(end, addDays(today, -1)), pre).balanceMin : balanceBefore
+  const vac = vacationAccount(user, year, undefined, pre)
   const [startUtc, endUtc] = rangeBoundsUtc(start, end, tz)
   const entries = entriesBetween(user.id, startUtc, endUtc)
   const edited = editedEntryIds(entries.map((e) => e.id))
-  const perDay: Record<string, { kind: string; start: string; end: string | null; edited: boolean; note: string }[]> =
-    {}
+  const perDay: Record<
+    string,
+    { id: number; kind: string; start: string; end: string | null; edited: boolean; note: string }[]
+  > = {}
   for (const e of entries) {
-    pushTo(perDay, localDate(e.startAt, tz), {
+    pushTo(perDay, localDateOf(e.startAt, tz), {
+      id: e.id,
       kind: e.kind,
-      start: localTime(e.startAt, tz),
-      end: e.endAt ? localTime(e.endAt, tz) : null,
+      start: localClock(e.startAt, tz),
+      end: e.endAt ? localClock(e.endAt, tz) : null,
       edited: edited.has(e.id) || e.source === "manual",
       note: e.note,
     })
   }
-  const logs = logsBetween(user.id, start, end)
+  const logs = projectItems([user], start, end)
   const projectsById = projectMap(logs)
-  const worklog: Record<
+  const projectTime: Record<
     string,
     {
+      entryId: number
       project: string | null
-      customerRef: string
       note: string
       minutes: number
       start: string | null
@@ -108,13 +113,13 @@ export function timesheet(actor: Actor, raw: z.input<typeof timesheetInput>) {
     }[]
   > = {}
   for (const w of logs) {
-    pushTo(worklog, w.date, {
+    pushTo(projectTime, w.date, {
+      entryId: w.entryId,
       project: w.projectId != null ? (projectsById.get(w.projectId)?.name ?? null) : null,
-      customerRef: w.customerRef,
       note: w.note,
-      minutes: w.minutes,
-      start: w.startTime,
-      end: w.endTime,
+      minutes: round(w.minutes),
+      start: w.start,
+      end: w.end,
     })
   }
   const signoff = db
@@ -122,7 +127,7 @@ export function timesheet(actor: Actor, raw: z.input<typeof timesheetInput>) {
     .from(monthSignoffs)
     .where(and(eq(monthSignoffs.userId, user.id), eq(monthSignoffs.month, `${year}-${String(month).padStart(2, "0")}`)))
     .all()
-    .find((r) => r.reopenedAt == null)
+    .find((r) => r.reopenedAt == null && seesDate(actor, user, r.periodStartDate))
   const team =
     user.teamId != null ? db.select({ name: teams.name }).from(teams).where(eq(teams.id, user.teamId)).get() : null
   return {
@@ -132,8 +137,7 @@ export function timesheet(actor: Actor, raw: z.input<typeof timesheetInput>) {
     month,
     days,
     entries: perDay,
-    worklog,
-    worklogMode: worklogConfig().mode,
+    projectTime,
     summary: summarize(days),
     payroll: payrollConfig(),
     balanceBeforeMin: balanceBefore,
@@ -167,9 +171,12 @@ export function balances(actor: Actor, raw: z.input<typeof balancesInput>) {
   const [start, end] = month ? monthBounds(year, month) : [`${year}-01-01`, `${year}-12-31`]
   const people = scopeUsers(actor, { teamId: input.teamId, periodStart: start })
   const teamNames = teamNameMap(people)
+  const settings = settingsTimeline()
   const rows = people.map((u) => {
-    const s = summarize(computeDays(u, start, end))
-    const vac = vacationAccount(u, year)
+    const from = clampFrom(actor, u, start)
+    const acc = personAccounts(u, [from, end].sort()[0], end, year, { settings })
+    const s = summarize(from <= end ? acc.days : [])
+    const vac = acc.vacation
     return {
       userId: u.id,
       name: u.name,
@@ -181,7 +188,7 @@ export function balances(actor: Actor, raw: z.input<typeof balancesInput>) {
       holidayMin: s.holidayWorkMin,
       nightMin: s.nightWorkMin,
       creditMin: round(s.surchargeMin + s.nightCreditMin),
-      balanceMin: timeBalance(u).balanceMin,
+      balanceMin: acc.balance.balanceMin,
       vacationTaken: vac.taken,
       vacationPlanned: vac.planned,
       vacationRemaining: vac.remaining,
@@ -220,12 +227,14 @@ export function absencesReport(actor: Actor, raw: z.input<typeof rangeInput>) {
   const people = scopeUsers(actor, { teamId: input.teamId, userId: input.userId, periodStart: input.from })
   const byId = new Map(people.map((u) => [u.id, u]))
   const types = absenceTypesById()
-  const items = absencesInRange([...byId.keys()], input.from, input.to, ["approved", "pending"])
+  const items = absencesInRange([...byId.keys()], input.from, input.to, ["approved", "pending"]).filter((a) =>
+    seesDate(actor, byId.get(a.userId)!, a.endDate),
+  )
   const byUser = new Map<number, Record<string, number>>(people.map((u) => [u.id, {}]))
   const rows = items.map((a) => {
     const u = byId.get(a.userId)!
     const t = types.get(a.typeId)!
-    const days = clippedDays(u, a, input.from, input.to)
+    const days = clippedDays(u, a, clampFrom(actor, u, input.from), input.to)
     if (a.status === "approved") {
       const bucket = byUser.get(u.id)!
       bucket[t.key] = round((bucket[t.key] ?? 0) + days)
@@ -268,8 +277,7 @@ export type AbsencesReportData = ReturnType<typeof absencesReport>
 
 interface ProjectRow {
   projectId: number | null
-  customerRef: string
-  kind: "project" | "customer" | "none"
+  kind: "project" | "none"
   name: string | null
   code: string
   color: string
@@ -279,12 +287,15 @@ interface ProjectRow {
   people: { userId: number; name: string; minutes: number }[]
 }
 
-/** Logged minutes per project (or customer reference) and person, deleted items excluded. */
+/** Logged minutes per project and person, deleted items excluded. */
 export function projectHours(actor: Actor, raw: z.input<typeof rangeInput>) {
   const input = rangeInput.parse(raw)
   checkRange(input.from, input.to)
   const people = scopeUsers(actor, { teamId: input.teamId, userId: input.userId, periodStart: input.from })
-  const logs = people.flatMap((u) => logsBetween(u.id, input.from, input.to))
+  const byUserId = new Map(people.map((u) => [u.id, u]))
+  const logs = projectItems(people, input.from, input.to).filter((w) =>
+    seesDate(actor, byUserId.get(w.userId)!, w.date),
+  )
   const projectsById = projectMap(logs)
   const byProject = new Map<string, { row: ProjectRow; perPerson: Map<number, number> }>()
   const byPerson = new Map(
@@ -304,15 +315,14 @@ export function projectHours(actor: Actor, raw: z.input<typeof rangeInput>) {
   for (const u of people) byPerson.get(u.id)!.team = u.teamId != null ? (teamNames.get(u.teamId) ?? null) : null
   for (const w of logs) {
     const p = w.projectId != null ? projectsById.get(w.projectId) : undefined
-    const key = w.customerRef ? `c:${w.customerRef}` : `p:${w.projectId ?? ""}`
+    const key = `p:${w.projectId ?? ""}`
     let entry = byProject.get(key)
     if (!entry) {
       entry = {
         row: {
           projectId: w.projectId,
-          customerRef: w.customerRef,
-          kind: w.customerRef ? "customer" : p ? "project" : "none",
-          name: w.customerRef || p?.name || null,
+          kind: p ? "project" : "none",
+          name: p?.name ?? null,
           code: p?.code ?? "",
           color: p?.color ?? "",
           team: p?.teamName ?? null,
@@ -330,7 +340,7 @@ export function projectHours(actor: Actor, raw: z.input<typeof rangeInput>) {
     const person = byPerson.get(w.userId)!
     person.minutes += w.minutes
     person.items++
-    const label = w.customerRef || p?.name || ""
+    const label = p?.name ?? ""
     person.byProject[label] = (person.byProject[label] ?? 0) + w.minutes
   }
   for (const { row, perPerson } of byProject.values())
@@ -362,18 +372,18 @@ export function rawEntries(actor: Actor, raw: z.input<typeof rangeInput>) {
   const people = scopeUsers(actor, { teamId: input.teamId, userId: input.userId, periodStart: input.from })
   return people.flatMap((u) => {
     const tz = u.timezone
-    const [startUtc] = dayBoundsUtc(input.from, tz)
+    const [startUtc] = dayBoundsUtc(clampFrom(actor, u, input.from), tz)
     const [, endUtc] = dayBoundsUtc(input.to, tz)
     const entries = entriesBetween(u.id, startUtc, endUtc, true)
     const edited = editedEntryIds(entries.map((e) => e.id))
-    const local = (at: string) => `${localDate(at, tz)} ${localTime(at, tz)}`
+    const local = (at: string) => `${localDateOf(at, tz)} ${localClock(at, tz)}`
     return entries.map((e) => ({
       entryId: e.id,
       userId: u.id,
       name: u.name,
       email: u.email,
       kind: e.kind,
-      date: localDate(e.startAt, tz),
+      date: localDateOf(e.startAt, tz),
       startLocal: local(e.startAt),
       endLocal: e.endAt ? local(e.endAt) : "",
       startUtc: iso(e.startAt),

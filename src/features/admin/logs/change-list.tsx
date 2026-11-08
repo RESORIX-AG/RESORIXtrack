@@ -1,4 +1,6 @@
-import { HIDDEN_REASONS } from "@/features/time/entry-history"
+import { useQuery } from "@tanstack/react-query"
+import { projectsQuery } from "@/features/projects/api"
+import { isAppReason } from "@/features/time/entry-history"
 import { fmtDateTime, fmtDay } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import type { Json, JsonObject } from "@/lib/json"
@@ -8,7 +10,7 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
 /** Reasons the app writes itself (clocking) are not shown. */
-const shownReason = (r: string | null | undefined) => (r && !HIDDEN_REASONS.has(r) ? r : "")
+const shownReason = (r: string | null | undefined) => (r && !isAppReason(r) ? r : "")
 
 /**
  * Change-log fields and values as people read them: translated field names, times in the viewer's zone,
@@ -18,10 +20,13 @@ export function useAuditFormat() {
   const { t, has, intl } = useI18n()
   const me = useMe()
   const hour12 = me.timeFormat === "12h"
+  const projects = useQuery(projectsQuery(true)).data?.items ?? []
+  const projectNames = new Map(projects.map((p) => [p.id, p.name]))
   const label = (k: string) => (has(`admin.audit.fields.${k}`) ? t(`admin.audit.fields.${k}`) : k)
   const value = (k: string, v: Json | undefined): string => {
     if (v == null || v === "") return "–"
     if (typeof v === "boolean") return t(v ? "common.yes" : "common.no")
+    if (k === "project_id" && typeof v === "number") return projectNames.get(v) ?? `#${v}`
     if (typeof v === "string") {
       if (INSTANT.test(v)) return fmtDateTime(v, { intl, tz: me.timezone, hour12 })
       if (DAY.test(v)) return fmtDay(v, intl, { day: "numeric", month: "short", year: "numeric" })

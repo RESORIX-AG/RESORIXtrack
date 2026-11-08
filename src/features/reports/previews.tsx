@@ -42,7 +42,7 @@ function PersonLink({ id, name, link }: { id: number; name: string; link: boolea
 
 type TsDay = TimesheetData["days"][number] & {
   times: TimesheetData["entries"][string]
-  logs: TimesheetData["worklog"][string]
+  logs: TimesheetData["projectTime"][string]
 }
 const tsCol = tableHelper<TsDay>()
 
@@ -54,7 +54,7 @@ export function TimesheetPreview({ d, today }: { d: TimesheetData; today: string
   const rows = d.days.map((day) => ({
     ...day,
     times: (d.entries[day.date] ?? []).filter((e) => e.kind === "work"),
-    logs: d.worklog[day.date] ?? [],
+    logs: d.projectTime[day.date] ?? [],
   }))
   const columns = [
     tsCol.accessor("date", {
@@ -78,7 +78,7 @@ export function TimesheetPreview({ d, today }: { d: TimesheetData; today: string
         c.getValue().length ? (
           <span className="flex flex-wrap gap-x-2">
             {c.getValue().map((e) => (
-              <span key={`${e.start}-${e.end}`} className="whitespace-nowrap" title={e.note || undefined}>
+              <span key={e.id} className="whitespace-nowrap" title={e.note || undefined}>
                 {e.start}–{e.end ?? "…"}
                 {e.edited ? (
                   <Pencil className="ml-0.5 inline size-3 text-warning" aria-label={t("reports.edited")} />
@@ -121,10 +121,8 @@ export function TimesheetPreview({ d, today }: { d: TimesheetData; today: string
               ) : null}
             </div>
             {day.logs.map((w) => (
-              <span key={`${w.project}-${w.note}-${w.minutes}-${w.start}`} className="text-xs text-muted-foreground">
-                {w.project || w.customerRef ? (
-                  <span className="text-foreground">{w.project ?? w.customerRef}</span>
-                ) : null}
+              <span key={w.entryId} className="text-xs text-muted-foreground">
+                {w.project ? <span className="text-foreground">{w.project}</span> : null}
                 {w.note ? ` ${w.note}` : ""} · {fmtMinutes(w.minutes)}
               </span>
             ))}
@@ -416,7 +414,7 @@ const projCol = tableHelper<Proj & { key: string }>()
 const personCol = tableHelper<Proj["people"][number]>()
 
 function projectKey(p: Proj): string {
-  return p.kind === "customer" ? `c:${p.customerRef}` : `p:${p.projectId ?? "none"}`
+  return `p:${p.projectId ?? "none"}`
 }
 
 export function ProjectsPreview({
@@ -431,8 +429,7 @@ export function ProjectsPreview({
   link: boolean
 }) {
   const { t } = useI18n()
-  const name = (p: Proj) =>
-    p.kind === "customer" ? `${t("reports.customer")} ${p.name}` : (p.name ?? t("reports.no_project"))
+  const name = (p: Proj) => p.name ?? t("reports.no_project")
   const selected =
     projectId != null ? d.projects.find((p) => p.kind === "project" && p.projectId === projectId) : undefined
   const columns = [

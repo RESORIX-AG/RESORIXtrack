@@ -16,8 +16,19 @@ test("profile: German UI after changing the language", async ({ as }, info) => {
   await goto(page, "/time")
   await expect(page.getByRole("heading", { level: 1, name: "Meine Zeit" })).toBeVisible()
 
-  // back to English
+  // the longer German labels stay inside the two-factor dialog
   await goto(page, "/profile")
+  await page.getByRole("button", { name: "Einrichten", exact: true }).click()
+  const mfa = page.getByRole("dialog", { name: "Einrichten" })
+  await mfa.getByLabel("Dein Passwort").fill("demo")
+  await mfa.getByRole("button", { name: "Weiter" }).click()
+  await expect(mfa.getByLabel("Code aus der App")).toBeVisible()
+  await expect(mfa.getByRole("button", { name: "Schlüssel kopieren" })).toBeVisible()
+  await expect.poll(() => mfa.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)
+  await page.keyboard.press("Escape")
+  await expect(mfa).toBeHidden()
+
+  // back to English
   await page.getByRole("combobox", { name: "Sprache" }).click()
   await page.getByRole("option", { name: "English" }).click()
   await page.getByRole("button", { name: "Speichern" }).first().click()

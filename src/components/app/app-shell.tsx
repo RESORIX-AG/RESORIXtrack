@@ -184,10 +184,9 @@ export function AppShell() {
   const t = useT()
   const titleKey = usePageTitleKey()
   const b = useBootstrap()
+  // until two-factor is set up only the profile answers: no clock, search or notifications
+  const ready = !b.me?.mfaDue
   useFocusHeadingOnNavigate()
-  useEffect(() => {
-    document.title = titleKey ? `${t(titleKey)} · RESORIXtrack` : "RESORIXtrack"
-  }, [titleKey, t])
   return (
     <SidebarProvider>
       <a
@@ -205,12 +204,14 @@ export function AppShell() {
           </Link>
           <p className="hidden truncate text-base font-semibold md:block">{titleKey ? t(titleKey) : b.company.name}</p>
           <div className="ml-auto flex items-center gap-2">
-            <CommandPalette />
-            <div className="hidden md:block">
-              <ClockControl variant="topbar" />
-            </div>
+            {ready ? <CommandPalette /> : null}
+            {ready ? (
+              <div className="hidden md:block">
+                <ClockControl variant="topbar" />
+              </div>
+            ) : null}
             <div className="flex items-center gap-1">
-              <NotificationsBell />
+              {ready ? <NotificationsBell /> : null}
               <ThemeMenu />
               <UserMenu />
             </div>
@@ -220,9 +221,11 @@ export function AppShell() {
           <MfaBanner />
           <Outlet />
         </main>
-        <div className="fixed inset-x-0 bottom-[calc(3.5rem+max(var(--safe-bottom),0.5rem))] z-30 px-3 pb-2 md:hidden">
-          <ClockControl variant="bar" />
-        </div>
+        {ready ? (
+          <div className="fixed inset-x-0 bottom-[calc(3.5rem+max(var(--safe-bottom),0.5rem))] z-30 px-3 pb-2 md:hidden">
+            <ClockControl variant="bar" />
+          </div>
+        ) : null}
         <MobileTabBar />
       </SidebarInset>
     </SidebarProvider>

@@ -6,7 +6,7 @@ import { auditLog, loginLog } from "@/server/services/admin-logs"
 import { createBackup, deleteBackup, listBackups } from "@/server/services/backups"
 import { requireAdmin } from "@/server/services/permissions"
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const day = z.iso.date()
 
 export const fetchBackups = createServerFn({ method: "GET" })
   .middleware([authed])

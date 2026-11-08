@@ -10,12 +10,33 @@ import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or } from "drizzl
 import { db } from "../db"
 import { revisions, type TimeEntry, timeEntries, type User, users } from "../db/schema"
 import { Conflict, Forbidden, NotFound, Validation } from "../errors"
-import { fmtInstant, iso, localDateOf, localToday, nowInstant, rangeBoundsUtc, utcnow, zone } from "../time"
+import {
+  fmtInstant,
+  instantOfMs,
+  iso,
+  localDateOf,
+  localToday,
+  nowInstant,
+  rangeBoundsUtc,
+  utcnow,
+  zone,
+} from "../time"
 import { ensureOpenInstants } from "./locks"
 import { notify } from "./notifications"
 import { deferMail } from "./outbox"
-import { type Actor, canManageUser, canViewUser, getUserOr404, requireView } from "./permissions"
-import { record, serializeRevision, snapshot } from "./revisions"
+import {
+  type Actor,
+  beforeCover,
+  canManageUser,
+  canViewUser,
+  clampFrom,
+  getUserOr404,
+  requireDate,
+  requireView,
+  seesDate,
+} from "./permissions"
+import { type EntryProject, entryProjects, type ProjectFields, resolveProjectFields } from "./project-time"
+import { record, revisionVisible, serializeRevision, snapshot } from "./revisions"
 import { getSetting } from "./settings"
 
 export const MAX_ENTRY_MS = 24 * 3600_000
@@ -41,7 +62,6 @@ export function parseInstantInput(value: string, tz: string, field = "at"): stri
 }
 
 export const ms = (at: string): number => Date.parse(at)
-export const instantOfMs = (n: number): string => new Date(n).toISOString().replace("Z", "000Z")
 
 // ------------------------------------------------------------------ serialization
 
@@ -57,6 +77,8 @@ export type EntryView = {
   scheduledEndAt: string | null
   tz: string
   note: string
+  projectId: number | null
+  project: EntryProject | null
   source: EntrySource
   minutes: number
   createdById: number | null
@@ -67,8 +89,12 @@ export type EntryView = {
   updatedAt: string
 }
 
-export function serializeEntry(e: TimeEntry, flags: { edited?: boolean; corrected?: boolean } = {}): EntryView {
+export function serializeEntry(
+  e: TimeEntry,
+  flags: { edited?: boolean; corrected?: boolean; projects?: Map<number, EntryProject> } = {},
+): EntryView {
   const end = e.endAt ? ms(e.endAt) : nowInstant().epochMilliseconds
+  const projects = flags.projects ?? entryProjects([e.projectId])
   return {
     id: e.id,
     userId: e.userId,
@@ -79,6 +105,8 @@ export function serializeEntry(e: TimeEntry, flags: { edited?: boolean; correcte
     scheduledEndAt: e.endAt == null ? iso(e.scheduledEndAt) : null,
     tz: e.tz,
     note: e.note,
+    projectId: e.projectId,
+    project: e.projectId != null ? (projects.get(e.projectId) ?? null) : null,
     source: e.source,
     minutes: Math.round(Math.max(0, (end - ms(e.startAt)) / 60000) * 100) / 100,
     createdById: e.createdById,
@@ -122,7 +150,8 @@ export function serializeEntries(rows: TimeEntry[], ownerId: number): EntryView[
   const ids = rows.map((e) => e.id)
   const edited = editedEntryIds(ids)
   const corrected = correctedEntryIds(ids, ownerId)
-  return rows.map((e) => serializeEntry(e, { edited: edited.has(e.id), corrected: corrected.has(e.id) }))
+  const projects = entryProjects(rows.map((e) => e.projectId))
+  return rows.map((e) => serializeEntry(e, { edited: edited.has(e.id), corrected: corrected.has(e.id), projects }))
 }
 
 // ------------------------------------------------------------------ reads
@@ -156,7 +185,7 @@ export function listEntries(
   includeDeleted = false,
 ): EntryView[] {
   const owner = requireView(actor, userId)
-  const [s, e] = rangeBoundsUtc(from, to, owner.timezone)
+  const [s, e] = rangeBoundsUtc(clampFrom(actor, owner, from), to, owner.timezone)
   return serializeEntries(entriesBetween(owner.id, s, e, includeDeleted), owner.id)
 }
 
@@ -171,6 +200,7 @@ export function visibleEntry(actor: Actor, id: number): { entry: TimeEntry; owne
   const entry = loadEntry(id)
   const owner = getUserOr404(entry.userId)
   if (!canViewUser(actor, owner)) throw new NotFound("Entry not found")
+  requireDate(actor, owner, localDateOf(entry.startAt, owner.timezone), "Entry")
   return { entry, owner }
 }
 
@@ -180,7 +210,7 @@ export function getEntry(actor: Actor, id: number): EntryView {
 }
 
 export function entryHistory(actor: Actor, id: number) {
-  const { entry } = visibleEntry(actor, id)
+  const { entry, owner } = visibleEntry(actor, id)
   const rows = db
     .select({ rev: revisions, name: users.name })
     .from(revisions)
@@ -188,7 +218,7 @@ export function entryHistory(actor: Actor, id: number) {
     .where(and(eq(revisions.entity, "time_entry"), eq(revisions.entityId, entry.id)))
     .orderBy(asc(revisions.at), asc(revisions.id))
     .all()
-  return rows.map((r) => serializeRevision(r.rev, r.name))
+  return rows.filter((r) => revisionVisible(actor, owner, r.rev)).map((r) => serializeRevision(r.rev, r.name))
 }
 
 /** Recent changes affecting a person (entries, absences, adjustments, schedules, work log). */
@@ -202,7 +232,7 @@ export function userHistory(actor: Actor, userId: number, limit = 200) {
     .orderBy(desc(revisions.at), desc(revisions.id))
     .limit(Math.min(Math.max(limit, 1), 1000))
     .all()
-  return rows.map((r) => serializeRevision(r.rev, r.name))
+  return rows.filter((r) => revisionVisible(actor, owner, r.rev)).map((r) => serializeRevision(r.rev, r.name))
 }
 
 // ------------------------------------------------------------------ guards
@@ -211,6 +241,12 @@ function authorize(actor: Actor, owner: User): void {
   if (actor.id !== owner.id && !canManageUser(actor, owner)) {
     throw new Forbidden("You can only change your own entries or those of teams you lead")
   }
+}
+
+/** A lead covering from a given day changes nothing before it. */
+function ensureInCover(actor: Actor, owner: User, ...instants: (string | null)[]): void {
+  for (const at of instants)
+    if (at && !seesDate(actor, owner, localDateOf(at, owner.timezone))) throw beforeCover(actor, owner)
 }
 
 export function checkOverlap(userId: number, start: string, end: string | null, excludeId?: number): void {
@@ -303,7 +339,7 @@ function notifyCorrection(actor: Actor, owner: User, entry: TimeEntry, action: s
 
 // ------------------------------------------------------------------ writes
 
-export interface EntryInput {
+export interface EntryInput extends ProjectFields {
   userId?: number | null
   startAt: string
   endAt: string
@@ -325,10 +361,12 @@ export function createEntry(actor: Actor, input: EntryInput): EntryView {
   if (!input.endAt) throw new Validation("End time is required", { fields: { endAt: "required" } })
   const end = parseInstantInput(input.endAt, owner.timezone, "endAt")
   validateInterval(start, end)
+  ensureInCover(actor, owner, start)
   const reason = input.reason ?? ""
   requireReason(actor, owner, reason, start)
   ensureOpenInstants(owner, start, end)
   checkOverlap(owner.id, start, end)
+  const project = resolveProjectFields(actor, owner, input, null)
   const source = input.source ?? "manual"
   const now = utcnow()
   const e = db
@@ -340,6 +378,7 @@ export function createEntry(actor: Actor, input: EntryInput): EntryView {
       endAt: end,
       tz: owner.timezone,
       note: (input.note ?? "").trim().slice(0, 500),
+      ...project,
       source,
       createdById: actor.id,
       createdAt: now,
@@ -361,7 +400,7 @@ export function createEntry(actor: Actor, input: EntryInput): EntryView {
   return serializeEntries([e], owner.id)[0]
 }
 
-export interface EntryChanges {
+export interface EntryChanges extends ProjectFields {
   startAt?: string
   /** `null` keeps a running entry open; a finished entry cannot be reopened. */
   endAt?: string | null
@@ -385,20 +424,32 @@ export function updateEntry(
   if (entry.endAt != null && end == null) {
     throw new Validation("A finished entry cannot be reopened", { fields: { endAt: "required" } })
   }
+  ensureInCover(actor, owner, start)
   const timesChanged =
     ms(start) !== ms(entry.startAt) || (end ? ms(end) : null) !== (entry.endAt ? ms(entry.endAt) : null)
   if (timesChanged) validateInterval(start, end)
   requireReason(actor, owner, reason, entry.startAt, start)
   ensureOpenInstants(owner, entry.startAt, entry.endAt, start, end)
   if (timesChanged) checkOverlap(owner.id, start, end, entry.id)
-  const next = { ...entry, startAt: timesChanged ? start : entry.startAt, endAt: timesChanged ? end : entry.endAt }
+  const next = {
+    ...entry,
+    startAt: timesChanged ? start : entry.startAt,
+    endAt: timesChanged ? end : entry.endAt,
+    ...resolveProjectFields(actor, owner, changes, entry),
+  }
   if (changes.note !== undefined) next.note = (changes.note ?? "").trim().slice(0, 500)
   const before = snapshot("time_entry", entry)
   if (JSON.stringify(snapshot("time_entry", next)) === JSON.stringify(before))
     return serializeEntries([entry], owner.id)[0]
   const updated = db
     .update(timeEntries)
-    .set({ startAt: next.startAt, endAt: next.endAt, note: next.note, updatedAt: utcnow() })
+    .set({
+      startAt: next.startAt,
+      endAt: next.endAt,
+      note: next.note,
+      projectId: next.projectId,
+      updatedAt: utcnow(),
+    })
     .where(eq(timeEntries.id, entry.id))
     .returning()
     .get()

@@ -3,8 +3,8 @@ import { expect, goto, PEOPLE, test } from "./fixtures"
 test("command palette: Ctrl/⌘K finds a person and opens their page", async ({ as }) => {
   const page = await as("jonas")
   await goto(page, "/")
-  await page.keyboard.press("ControlOrMeta+k")
   const palette = page.getByRole("dialog", { name: "Search" })
+  await page.keyboard.press("ControlOrMeta+k")
   await expect(palette).toBeVisible()
   await palette.getByRole("combobox").fill("Lea")
   const hit = palette.getByRole("option", { name: new RegExp(PEOPLE.lea.name) })

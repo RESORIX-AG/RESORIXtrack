@@ -1,20 +1,23 @@
 /**
  * The dashboard's clock card: a ring that fills towards today's target, the live time, the state, a scheduled
- * clock-out ("clock out later") and the actions (clock in/out, custom time, add time manually, report sick).
+ * clock-out ("clock out later"), the project (switch while working) and the actions (clock in/out, custom time,
+ * add time manually in place, report sick).
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { AlertTriangle, History, Plus, Thermometer } from "lucide-react"
+import { AlertTriangle, History, Thermometer } from "lucide-react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/app/confirm"
 import { Button, ButtonLink } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { reportSickTodayFn, sickCheckQuery } from "@/features/absences/api"
-import { type Clock, ClockActions, OfflineBadge, ScheduledLine } from "@/features/clock/clock-control"
+import { type Clock, ClockActions, ClockProject, OfflineBadge, ScheduledLine } from "@/features/clock/clock-control"
 import { CustomTimeButton } from "@/features/clock/custom-time"
 import { type LiveClock, liveWorkedMin, primaryAction } from "@/features/clock/use-clock"
 import { useNow } from "@/features/clock/use-now"
+import { useProjectMode } from "@/features/projects/project-picker"
+import { AddEntryButton } from "@/features/time/add-entry-button"
 import { invalidateTimeData } from "@/features/time/invalidate"
 import { fmtClockTime, wallClock } from "@/features/time/lib"
 import { Notice } from "@/features/time/notice"
@@ -70,6 +73,8 @@ export function HeroClock({
   today: { date: string; targetMin: number; absences: { category: string; status: string }[] }
 }) {
   const clockTitleId = useId()
+  const projectId = useId()
+  const projectMode = useProjectMode()
   const { t, tError, intl } = useI18n()
   const me = useMe()
   const qc = useQueryClient()
@@ -81,7 +86,7 @@ export function HeroClock({
   const tz = me.timezone
   const since = c.since ? wallClock(c.since, tz) : null
   // still running from a previous day (forgot to clock out)
-  const overnight = c.state !== "idle" && since && since.date < today.date ? since : null
+  const overnight = c.state === "working" && since && since.date < today.date ? since : null
   const isSick = today.absences.some((a) => a.category === "sick" && a.status === "approved")
   const meta = [
     c.since && c.state !== "idle"
@@ -134,6 +139,14 @@ export function HeroClock({
             </p>
             <ScheduledLine clock={clock} className="justify-center sm:justify-start" />
           </div>
+          {projectMode !== "off" ? (
+            <div className="flex w-full max-w-xs flex-col gap-1.5 text-left">
+              <label htmlFor={projectId} className="text-xs text-muted-foreground">
+                {c.state === "working" ? t("clock.project") : t("clock.next_project")}
+              </label>
+              <ClockProject clock={clock} place="hero" id={projectId} />
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
             <ClockActions clock={clock} size="lg" className="gap-2" custom={false} />
             <CustomTimeButton
@@ -146,10 +159,7 @@ export function HeroClock({
                 </Button>
               }
             />
-            <ButtonLink variant="ghost" size="lg" render={<Link to="/time" search={{ add: true }} />}>
-              <Plus data-icon="inline-start" />
-              {t("dashboard.forgot_clock")}
-            </ButtonLink>
+            <AddEntryButton size="lg" label={t("dashboard.forgot_clock")} />
             {sick.data?.allowed ? (
               <Button variant="ghost" size="lg" onClick={() => setConfirmSick(true)}>
                 <Thermometer data-icon="inline-start" />

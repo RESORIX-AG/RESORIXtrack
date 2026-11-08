@@ -20,7 +20,8 @@ const col = tableHelper<TeamRow>()
 export function TeamsPage() {
   const { t, intl } = useI18n()
   const { data } = useSuspenseQuery(teamsQuery)
-  useSuspenseQuery(userRefsQuery)
+  const { data: refs } = useSuspenseQuery(userRefsQuery)
+  const companyCalendar = refs.calendars.find((c) => c.isDefault)
   const [editing, setEditing] = useState<number | "new" | null>(null)
   const columns = [
     col.accessor("name", {
@@ -86,11 +87,18 @@ export function TeamsPage() {
       header: () => t("admin.teams.members"),
       meta: { numeric: true, mobileLabel: t("admin.teams.members") },
     }),
-    col.accessor((r) => r.calendarName ?? "", {
+    col.accessor((r) => r.calendarName ?? companyCalendar?.name ?? "", {
       id: "calendar",
       header: () => t("admin.teams.calendar"),
       meta: { hideOnMobile: true },
-      cell: (c) => c.getValue() || <span className="text-muted-foreground">{t("admin.teams.calendar_default")}</span>,
+      cell: (c) => (
+        <span className="flex items-center gap-2">
+          {c.getValue()}
+          {companyCalendar && (c.row.original.holidayCalendarId ?? companyCalendar.id) === companyCalendar.id ? (
+            <StatusBadge tone="brand">{t("admin.holidays.default")}</StatusBadge>
+          ) : null}
+        </span>
+      ),
     }),
   ]
   return (

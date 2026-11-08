@@ -13,6 +13,7 @@ const search = z.object({
   date: z.iso.date().optional().catch(undefined),
   add: z.coerce.boolean().optional().catch(undefined),
   deleted: z.coerce.boolean().optional().catch(undefined),
+  fix: z.enum(["project"]).optional().catch(undefined),
 })
 
 export const Route = createFileRoute("/_app/time")({

@@ -34,6 +34,7 @@
   "reason_placeholder": "p. ex. oubli de pointer",
   "reason_other_help": "{name} est informé·e.",
   "tz_hint": "Heures en {tz}",
+  "delete_title": "Supprimer cette saisie ?",
   "deleted": "Saisie supprimée",
   "confirm_delete": "Supprimer la saisie",
   "history_title": "Historique des modifications",
@@ -57,7 +58,8 @@
     "start_at": "Début",
     "end_at": "Fin",
     "note": "Remarque",
-    "is_deleted": "Supprimé"
+    "is_deleted": "Supprimé",
+    "project_id": "Projet"
   },
   "by_other": "par quelqu'un d'autre",
   "dispute": "Contester",
@@ -81,5 +83,15 @@
   "reason_required": "Motif (obligatoire)",
   "reason_delete_help": "Une suppression exige toujours un motif; il reste dans l'historique des modifications.",
   "night_credit": "Crédit de nuit",
-  "surcharge_credit": "Crédit dimanche/férié"
+  "surcharge_credit": "Crédit dimanche/férié",
+  "project": "Projet",
+  "no_project": "Aucun projet",
+  "choose_project": "Choisir un projet",
+  "inactive": "inactif",
+  "project_required": "Choisis un projet.",
+  "project_missing": "Travail sans projet",
+  "project_fix_hint_one": "1 saisie n'a pas encore de projet. Elle est marquée ci-dessous.",
+  "project_fix_hint_other": "{count} saisies n'ont pas encore de projet. Elles sont marquées ci-dessous.",
+  "project_fix_done": "Toutes les saisies ont un projet.",
+  "daily_total_help": "Plusieurs totaux par jour, un par projet, sont saisis l'un après l'autre."
 }

@@ -81,5 +81,7 @@
     "hex": "Hex"
   },
   "choose_file": "Choose file",
-  "remove": "Remove"
+  "remove": "Remove",
+  "results": "Results",
+  "note_no_personal": "Kept with the time records for years. No health or other personal details."
 }

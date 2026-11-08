@@ -27,7 +27,7 @@ export type UsersSearch = {
 
 const col = tableHelper<UserRow>()
 
-export function RoleBadges({ row }: { row: Pick<UserRow, "role" | "capabilities" | "isLead"> }) {
+export function RoleBadges({ row }: { row: Pick<UserRow, "role" | "capabilities" | "isLead" | "isDeputy"> }) {
   const { t } = useI18n()
   const badges = [
     row.role === "admin" ? (
@@ -42,7 +42,7 @@ export function RoleBadges({ row }: { row: Pick<UserRow, "role" | "capabilities"
     ) : null,
     row.isLead ? (
       <StatusBadge key="l" tone="info">
-        {t("admin.roles.lead")}
+        {t(row.isDeputy ? "admin.teams.role_deputy" : "admin.roles.lead")}
       </StatusBadge>
     ) : null,
     row.capabilities.includes("projects") ? <StatusBadge key="p">{t("admin.roles.projects")}</StatusBadge> : null,
@@ -181,6 +181,7 @@ export function UsersPage({ search, onSearch }: { search: UsersSearch; onSearch:
         toolbar={
           <>
             <FilterSelect
+              searchable
               label={t("common.team")}
               value={search.team ?? ""}
               onChange={(v) => onSearch({ ...search, team: v || undefined })}

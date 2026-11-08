@@ -50,6 +50,48 @@
       "when": 1794058445543,
       "tag": "0006_clock_out_later",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794068772371,
+      "tag": "0007_canton_presets",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794069077248,
+      "tag": "0008_entry_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794094451620,
+      "tag": "0009_attachment_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794095270893,
+      "tag": "0010_signoff_calendar",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794101278269,
+      "tag": "0011_dated_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794150205446,
+      "tag": "0012_rehire_guard",
+      "breakpoints": true
     }
   ]
 }

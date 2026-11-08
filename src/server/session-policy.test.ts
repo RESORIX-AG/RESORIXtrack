@@ -61,6 +61,18 @@ describe("session limits", () => {
     expect(exists(s.row.id)).toBe(false)
   })
 
+  it("keeps the idle timeout when the client leaves out its 'don't remember' cookie", async () => {
+    const s = await signedIn(false)
+    expect(s.row.short).toBe(true)
+    const withoutFlag = s.cookie
+      .split("; ")
+      .filter((c) => !c.includes("dont_remember"))
+      .join("; ")
+    age(s.row.id, { updatedAt: env.sessionShortIdleHours * HOUR + 1000 })
+    expect(await auth.api.getSession({ headers: new Headers({ cookie: withoutFlag }) })).toBeNull()
+    expect(exists(s.row.id)).toBe(false)
+  })
+
   it("keeps an idle remembered session", async () => {
     const s = await signedIn(true)
     expect(s.cookie).not.toContain("dont_remember")

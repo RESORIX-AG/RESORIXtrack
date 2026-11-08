@@ -20,14 +20,14 @@ All data lives in the Docker volume `resorixtrack-data`, mounted at `/data`:
 - `branding/`: logos,
 - `manifest.json`: version, time, SHA-256 of every file (checked on restore).
 
-**Encryption** (format RTBK1, same as v1): a key derived from `BACKUP_PASSWORD` with Argon2id (64 MiB, 3 passes, random salt per archive), ChaCha20-Poly1305 in 1 MiB chunks, header authenticated in every chunk, truncation detected. The ZIP is streamed into the encryptor; no unencrypted archive touches the disk. Changing `BACKUP_PASSWORD` affects new backups only; restore older ones with `--ask-password`. Format details: `src/server/services/backup-crypto.ts`.
+**Encryption** (format RTBK1): a key derived from `BACKUP_PASSWORD` with Argon2id (64 MiB, 3 passes, random salt per archive), ChaCha20-Poly1305 in 1 MiB chunks, header authenticated in every chunk, truncation detected. The ZIP is streamed into the encryptor; no unencrypted archive touches the disk. Changing `BACKUP_PASSWORD` affects new backups only; restore older ones with `--ask-password`. Format details: `src/server/services/backup-crypto.ts`.
 
 ## When backups are made
 
 | Trigger | Notes |
 |---|---|
 | Nightly 02:00 (worker) | `-auto`, with documents; the last `BACKUP_KEEP` (14) are kept |
-| Administration → Backups & logs → Create backup | Choose whether to include documents; download from the list |
+| Administration → Backups & logs → Create backup | With documents; download from the list |
 | `docker compose exec app rt backup [--label x] [--no-attachments]` | Manual |
 | Update with pending migrations (`rt migrate` on start) | `-premigrate`, without documents (migrations do not touch them) |
 
@@ -49,7 +49,7 @@ The archives are encrypted, so any destination works, as long as the password is
 
 ## Restore
 
-Replaces the database, documents and logos. The current database is kept as `resorixtrack.db.before-restore-<time>`.
+Replaces the database, documents and logos (the documents only if the backup includes them). The current data is set aside while the restore runs and put back if it fails; after a successful restore it is deleted, together with copies an earlier release left as `*.before-restore-<time>`. To keep the current state, make a backup first.
 
 1. Stop the app and worker:
    ```bash
@@ -70,11 +70,11 @@ Replaces the database, documents and logos. The current database is kept as `res
    - `docker compose exec app rt verify-signoffs` reports all sign-offs intact;
    - tell people to re-enter anything recorded after the backup time.
 
-A v1 backup is detected and not restored; import it instead: [migration-from-v1.md](migration-from-v1.md#from-a-v1-backup).
+A RESORIXtrack 1.x backup is refused.
 
 ## Decrypt without restoring
 
-To look inside a backup (v1 or v2) without replacing anything:
+To look inside a backup without replacing anything:
 
 ```bash
 docker compose exec app rt decrypt-backup /data/backups/<file>.zip.enc --out /tmp/inspect

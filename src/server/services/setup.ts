@@ -19,7 +19,7 @@ import { ensureDefaultAbsenceTypes } from "./absence-types"
 import { createCalendarFromPreset } from "./holiday-calendars"
 import { recordLoginAttempt } from "./login-log"
 import { actorFromUser } from "./permissions"
-import { createSchedule, defaultScheduleMinutes } from "./schedules"
+import { createFirstSchedule, defaultScheduleMinutes } from "./schedules"
 import { getSetting, updateSettings } from "./settings"
 import { checkNewPassword, setPasswordHash } from "./user-auth"
 
@@ -81,6 +81,7 @@ export interface SetupInput {
   fulltimeWeeklyMinutes: number
   defaultVacationDays: number
   holidayPreset?: string | null
+  holidayPresetDays?: string[]
   adminName: string
   adminEmail: string
   adminPassword: string
@@ -156,7 +157,7 @@ export async function completeSetup(
       .returning()
       .get()
     setPasswordHash(user.id, hash)
-    createSchedule(actorFromUser(user), user.id, {
+    createFirstSchedule(actorFromUser(user), user, {
       validFrom: start,
       pensumPercent: 100,
       minutes: defaultScheduleMinutes(input.fulltimeWeeklyMinutes),
@@ -169,7 +170,9 @@ export async function completeSetup(
   const preset = input.holidayPreset
   if (preset) {
     try {
-      rawSqlite().transaction(() => createCalendarFromPreset(preset, { makeDefault: true }))()
+      rawSqlite().transaction(() =>
+        createCalendarFromPreset(preset, { makeDefault: true, presetDays: input.holidayPresetDays, source: "setup" }),
+      )()
       holidaysInstalled = true
     } catch (err) {
       console.warn(`[setup] holiday preset ${preset} not installed: ${describeError(err)}`)

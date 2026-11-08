@@ -61,7 +61,7 @@ export function buildNav(me: Me, b: Bootstrap): NavGroup[] {
     // administrators are the approvers of last resort (nobody else could decide)
     team.push({ to: "/team/approvals", labelKey: "nav.approvals", icon: Inbox, badge: b.counts.pendingApprovals })
   }
-  if (me.canProjects && b.company.worklogMode !== "off") {
+  if (me.canProjects && b.company.projectMode !== "off") {
     team.push({ to: "/team/projects", labelKey: "nav.projects", icon: FolderKanban })
   }
   if (team.length) groups.push({ labelKey: "nav.team_section", items: team })

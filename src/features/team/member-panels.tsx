@@ -11,6 +11,7 @@ import { tableHelper } from "@/components/data/table-helper"
 import { AbsenceSheet } from "@/features/absences/absence-sheet"
 import { absencesQuery } from "@/features/absences/api"
 import { formatSpan } from "@/features/absences/lib"
+import { useAuditFormat } from "@/features/admin/logs/change-list"
 import { findingsQuery, yearFindingsQuery } from "@/features/compliance/api"
 import { OvertimeMeter } from "@/features/reports/compliance-preview"
 import { MonthNav } from "@/features/reports/controls"
@@ -20,7 +21,6 @@ import { userHistoryQuery } from "@/features/time/api"
 import { todayIn } from "@/features/time/lib"
 import { fmtDateTime, fmtDays, fmtMinutes, monthRange } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
-import type { Json } from "@/lib/json"
 import { useMe } from "@/lib/session"
 import type { AbsenceDto } from "@/server/services/absences"
 import type { userHistory } from "@/server/services/entries"
@@ -69,7 +69,7 @@ export function AbsencesPanel({ userId, onEdit }: { userId: number; onEdit: (a: 
   ]
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex justify-end">
         <PeriodNav
           label={String(year)}
           onPrev={() => setYear(year - 1)}
@@ -204,33 +204,21 @@ export function HistoryPanel({ userId }: { userId: number }) {
   )
 }
 
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
-
-/** "Field: old → new" per changed field (instants in the viewer's zone), then the reason. */
+/** "Field: old → new" per changed field, formatted like the change log, then the reason. */
 function Changes({ item }: { item: Rev }) {
-  const { t, has, intl } = useI18n()
-  const me = useMe()
-  const show = (v: Json | undefined): string => {
-    if (v == null || v === "") return "–"
-    if (typeof v === "boolean") return v ? t("common.yes") : t("common.no")
-    if (typeof v === "string" && INSTANT.test(v))
-      return fmtDateTime(v, { intl, tz: me.timezone, hour12: me.timeFormat === "12h" })
-    return typeof v === "object" ? JSON.stringify(v) : String(v)
-  }
-  const label = (k: string) => (has(`admin.audit.fields.${k}`) ? t(`admin.audit.fields.${k}`) : k)
+  const { label, value, reason } = useAuditFormat()
+  const why = reason(item.reason)
   return (
     <div className="flex min-w-0 flex-col gap-0.5 text-sm">
       {item.changed.slice(0, 4).map((k) => (
         <span key={k} className="truncate">
           <span className="text-muted-foreground">{label(k)}:</span>{" "}
-          <span className="tabular">{show(item.before?.[k])}</span>
+          <span className="tabular">{value(k, item.before?.[k])}</span>
           <span className="text-muted-foreground"> → </span>
-          <span className="tabular">{show(item.after?.[k])}</span>
+          <span className="tabular">{value(k, item.after?.[k])}</span>
         </span>
       ))}
-      {item.reason && item.reason !== "clock" ? (
-        <span className="truncate text-xs text-muted-foreground italic">{item.reason}</span>
-      ) : null}
+      {why ? <span className="truncate text-xs text-muted-foreground italic">{why}</span> : null}
     </div>
   )
 }

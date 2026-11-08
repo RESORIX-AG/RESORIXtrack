@@ -14,6 +14,7 @@ import { Conflict, Forbidden, NotFound, Validation } from "../errors"
 import { hashPassword } from "../password"
 import { fmtInstant, iso, isValidTz, nowInstant, utcnow } from "../time"
 import { queueMail } from "./mail"
+import { oidcEnabled } from "./oidc"
 import type { Actor } from "./permissions"
 import { checkNewPassword, setPasswordHash } from "./user-auth"
 
@@ -90,6 +91,8 @@ export async function acceptInvite(
   input: { password: string; locale?: string; timezone?: string },
 ): Promise<User> {
   const { user } = openToken(raw)
+  // single sign-on only: a password would be a way around the identity provider
+  if (env.oidc.only && oidcEnabled()) throw new Forbidden("Sign in with single sign-on", { code: "oidc_only" })
   if (input.timezone && !isValidTz(input.timezone))
     throw new Validation("Unknown timezone", { fields: { timezone: "invalid" } })
   await checkNewPassword(input.password, user.email)

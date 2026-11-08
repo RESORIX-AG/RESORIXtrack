@@ -2,7 +2,8 @@
  * Date picker: a trigger with the geometry of an input (36 px, radius, surface) showing the date in the app
  * locale, opening a calendar popover (Monday first, today marked, arrow keys move by day, PageUp/PageDown by
  * month). Values are `YYYY-MM-DD` strings, "" when empty. `marks` adds coloured dots for days such as
- * holidays or absences; their names are read out with the day.
+ * holidays or absences; their names are read out with the day. `icon` shows a calendar icon, for toolbars
+ * without a visible label.
  */
 import { CalendarIcon } from "lucide-react"
 import { useState } from "react"
@@ -51,6 +52,7 @@ export function DatePicker({
   invalid,
   marks,
   far = false,
+  icon = false,
   className,
   "aria-describedby": describedBy,
   "aria-label": ariaLabel,
@@ -68,6 +70,7 @@ export function DatePicker({
   marks?: DayMarks
   /** month and year dropdowns, for dates far from today (birth date, contract start) */
   far?: boolean
+  icon?: boolean
   className?: string
   "aria-describedby"?: string
   "aria-label"?: string
@@ -106,7 +109,7 @@ export function DatePicker({
         aria-label={ariaLabel}
         className={cn(dateTriggerClass, className)}
       >
-        <CalendarIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        {icon ? <CalendarIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : null}
         <span className={cn("min-w-0 flex-1 truncate tabular", !value && "text-muted-foreground")}>
           {value
             ? fmtDay(value, intl, { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })

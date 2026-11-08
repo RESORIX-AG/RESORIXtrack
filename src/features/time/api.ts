@@ -6,10 +6,10 @@ import { db } from "@/server/db"
 import { revisions, users } from "@/server/db/schema"
 import { Validation } from "@/server/errors"
 import { authed, tx } from "@/server/middleware"
-import { computeDaysFrom, loadContext, summarize, timeBalance, vacationAccount } from "@/server/services/accounts"
+import { computeDaysFrom, loadContext, personAccounts, summarize } from "@/server/services/accounts"
 import { clockAction, clockState, syncOffline } from "@/server/services/clock"
 import { CLOCK_ACTIONS, OFFLINE_ACTIONS } from "@/server/services/clock.schemas"
-import { periodFindings } from "@/server/services/compliance"
+import { coveredFindings, periodFindings } from "@/server/services/compliance"
 import {
   createEntry,
   deleteEntry,
@@ -24,15 +24,17 @@ import {
 } from "@/server/services/entries"
 import { lockedMonths } from "@/server/services/locks"
 import { withOutbox } from "@/server/services/outbox"
-import { type Actor, canManageUser, requireView } from "@/server/services/permissions"
+import { type Actor, canManageUser, requireView, seesDate } from "@/server/services/permissions"
+import { firstDayMissingProject, RECENT_DAYS } from "@/server/services/project-time"
+import { revisionVisible } from "@/server/services/revisions"
 import { getAllSettings } from "@/server/services/settings"
-import { firstMissingDay, logsBetween, serializeLogs, worklogConfig } from "@/server/services/worklog"
-import { addDays, iso, localToday, monthBounds, rangeBoundsUtc, weekStart } from "@/server/time"
+import { addDays, iso, localDateOf, localToday, monthBounds, rangeBoundsUtc, weekStart } from "@/server/time"
 
 const id = z.number().int().positive()
 const day = z.iso.date()
 const instant = z.string().min(10).max(40)
 const reason = z.string().max(500).default("")
+const projectFields = { projectId: id.nullish() }
 
 /** A period: an explicit range (max 400 days), the ISO week containing `week`, or a month `YYYY-MM`. */
 const periodInput = z
@@ -56,8 +58,8 @@ function resolveRange(p: z.output<typeof periodInput>): [string, string] {
     return [s, addDays(s, 6)]
   }
   if (p.month) return monthBounds(Number(p.month.slice(0, 4)), Number(p.month.slice(5, 7)))
-  const from = p.from!
-  const to = p.to!
+  const { from, to } = p
+  if (!from || !to) throw new Validation("from/to, week or month is required")
   if (to < from) throw new Validation("'to' is before 'from'", { fields: { to: "before_start" } })
   if (Temporal.PlainDate.from(from).until(to).days > 400)
     throw new Validation("Range too large", { fields: { to: "too_long" } })
@@ -66,17 +68,22 @@ function resolveRange(p: z.output<typeof periodInput>): [string, string] {
 
 /**
  * Everything a week or month view needs in one call: per-day figures, summary, entries (incl. deleted ones on
- * request), work log items, compliance findings, signed-off months and what the viewer may do.
+ * request) with their projects, compliance findings, signed-off months and what the viewer may do.
  */
 function periodView(actor: Actor, p: z.output<typeof periodInput>) {
   const user = p.userId == null || p.userId === actor.id ? actor.user : requireView(actor, p.userId)
   const [from, to] = resolveRange(p)
   const ctx = loadContext(user, from, to)
   const [s, e] = rangeBoundsUtc(from, to, user.timezone)
-  const rows = entriesBetween(user.id, s, e, p.includeDeleted)
+  // a lead covering from a later day sees the days from then on
+  const visible = (d: string) => seesDate(actor, user, d)
+  const rows = entriesBetween(user.id, s, e, p.includeDeleted).filter((r) =>
+    visible(localDateOf(r.startAt, user.timezone)),
+  )
   const edited = editedEntryIds(rows.map((r) => r.id))
-  const days = computeDaysFrom(ctx, { editedEntryIds: edited })
-  const findings = periodFindings(user, from, to)
+  const days = computeDaysFrom(ctx, { editedEntryIds: edited }).filter((d) => visible(d.date))
+  const pre = { timeline: ctx.timeline, settings: { at: ctx.settingsAt, changes: ctx.settingChanges } }
+  const findings = coveredFindings(actor, user, periodFindings(user, from, to, undefined, pre))
   const own = user.id === actor.id
   return {
     user: { id: user.id, name: user.name, timezone: user.timezone, recordingMode: user.recordingMode },
@@ -86,7 +93,6 @@ function periodView(actor: Actor, p: z.output<typeof periodInput>) {
     days,
     summary: summarize(days),
     entries: serializeEntries(rows, user.id),
-    worklog: { config: worklogConfig(), items: serializeLogs(logsBetween(user.id, from, to)) },
     findings,
     lockedMonths: lockedMonths(user, from, to),
     canEdit: own || canManageUser(actor, user),
@@ -103,21 +109,25 @@ export const fetchPeriod = createServerFn({ method: "GET" })
 export const periodQuery = (p: PeriodInput) =>
   queryOptions({ queryKey: ["time", "period", p], queryFn: () => fetchPeriod({ data: p }) })
 
-/** Dashboard tiles: today, this week, balance, vacation, clock, first day missing its work log. */
+/** Dashboard tiles: today, this week, balance, vacation, clock, first recent day with work without a project. */
 export const fetchTimeOverview = createServerFn({ method: "GET" })
   .middleware([authed])
   .handler(({ context: { actor } }) => {
     const user = actor.user
     const today = localToday(user.timezone)
     const ws = weekStart(today)
-    const days = computeDaysFrom(loadContext(user, ws, addDays(ws, 6)))
+    // one load: the week, the recent days checked for projects, the balance and the vacation account
+    const acc = personAccounts(user, addDays(today, -RECENT_DAYS), addDays(ws, 6), Number(today.slice(0, 4)))
+    const days = acc.days.filter((d) => d.date >= ws)
+    const todayRow = days.find((d) => d.date === today)
+    if (!todayRow) throw new Error("today outside its own week")
     return {
-      today: days.find((d) => d.date === today)!,
+      today: todayRow,
       week: { days, summary: summarize(days) },
-      balance: timeBalance(user),
-      vacation: vacationAccount(user, Number(today.slice(0, 4))),
+      balance: acc.balance,
+      vacation: acc.vacation,
       clock: clockState(user),
-      worklogMissingDay: firstMissingDay(user),
+      projectMissingDay: firstDayMissingProject(user, acc.days),
     }
   })
 
@@ -134,6 +144,7 @@ export const createEntryFn = createServerFn({ method: "POST" })
       startAt: instant,
       endAt: instant,
       note: z.string().max(500).default(""),
+      ...projectFields,
       reason,
     }),
   )
@@ -147,6 +158,7 @@ export const updateEntryFn = createServerFn({ method: "POST" })
       startAt: instant.optional(),
       endAt: instant.nullish(),
       note: z.string().max(500).optional(),
+      ...projectFields,
       reason,
     }),
   )
@@ -209,6 +221,7 @@ export const clockActionFn = createServerFn({ method: "POST" })
       at: instant.nullish(),
       custom: z.boolean().default(false),
       note: z.string().max(500).default(""),
+      ...projectFields,
     }),
   )
   .handler(({ data, context: { actor } }) => tx(() => clockAction(actor, data.action, data)))
@@ -225,6 +238,7 @@ export const syncOfflineFn = createServerFn({ method: "POST" })
             action: z.enum(OFFLINE_ACTIONS),
             at: instant,
             note: z.string().max(500).optional(),
+            ...projectFields,
           }),
         )
         .max(200),
@@ -246,13 +260,7 @@ export const fetchCorrections = createServerFn({ method: "GET" })
     const out: Record<number, Correction> = {}
     if (!data.ids.length) return out
     const rows = db
-      .select({
-        id: revisions.entityId,
-        reason: revisions.reason,
-        at: revisions.at,
-        action: revisions.action,
-        by: users.name,
-      })
+      .select({ rev: revisions, by: users.name })
       .from(revisions)
       .leftJoin(users, eq(users.id, revisions.actorId))
       .where(
@@ -266,7 +274,9 @@ export const fetchCorrections = createServerFn({ method: "GET" })
       )
       .orderBy(desc(revisions.at), desc(revisions.id))
       .all()
-    for (const r of rows) out[r.id] ??= { by: r.by ?? "", reason: r.reason, at: iso(r.at), action: r.action }
+      .filter((r) => revisionVisible(actor, owner, r.rev))
+    for (const { rev, by } of rows)
+      out[rev.entityId] ??= { by: by ?? "", reason: rev.reason, at: iso(rev.at), action: rev.action }
     return out
   })
 
